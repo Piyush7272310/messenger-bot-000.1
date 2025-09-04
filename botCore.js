@@ -255,7 +255,7 @@ function startBot(appStatePath, ownerUID) {
 /rkb [name] → Gaali spam
 /stop → Stop spam
 /exit → Bot exit`, threadID);
-          continue;
+          return;
         }
 
         // /tid
