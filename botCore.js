@@ -7,7 +7,7 @@ let stopRequested = false;
 const lockedGroupNames = {};
 const lockedEmojis = {};
 const lockedDPs = {};
-const lockedNicks = {}; // { uid: nickname }
+const lockedNicks = {}; 
 let stickerInterval = null;
 let stickerLoopActive = false;
 let targetUID = null;
@@ -36,7 +36,7 @@ function startBot(appStatePath, ownerUID) {
 
         // ===== Auto Reverts =====
 
-        // Group Name Lock Revert
+        // Group Name Lock
         if (logMessageType === "log:thread-name" && lockedGroupNames[threadID]) {
           if (logMessageData?.name !== lockedGroupNames[threadID]) {
             await api.setTitle(lockedGroupNames[threadID], threadID);
@@ -44,32 +44,34 @@ function startBot(appStatePath, ownerUID) {
           }
         }
 
-        // Emoji Lock Revert
+        // Emoji Lock
         if (logMessageType === "log:thread-icon" && lockedEmojis[threadID]) {
           const lockedEmoji = lockedEmojis[threadID];
-          const newEmoji = logMessageData?.thread_icon;
+          const newEmoji = logMessageData?.thread_icon || logMessageData?.icon;
+          if (!newEmoji) return;
           if (newEmoji !== lockedEmoji) {
             try {
               await api.changeThreadEmoji(lockedEmoji, threadID);
               console.log(`😀 Emoji reverted in ${threadID}`);
             } catch (e) {
-              console.log("⚠️ Emoji revert failed error:", e.message);
+              console.log("⚠️ Emoji revert failed:", e.message);
             }
           }
         }
 
-        // DP Lock Revert
+        // DP Lock
         if (logMessageType === "log:thread-image" && lockedDPs[threadID]) {
+          const filePath = lockedDPs[threadID];
+          if (!fs.existsSync(filePath)) return;
           try {
-            const stream = fs.createReadStream(lockedDPs[threadID]);
-            await api.changeGroupImage(stream, threadID);
+            await api.changeGroupImage(filePath, threadID);
             console.log(`🖼 DP reverted in ${threadID}`);
           } catch (e) {
             console.log("⚠️ DP revert failed:", e.message);
           }
         }
 
-        // Nickname Lock Revert
+        // Nickname Lock
         if (logMessageType === "log:user-nickname" && lockedNicks[senderID]) {
           const lockedNick = lockedNicks[senderID];
           const currentNick = logMessageData?.nickname;
@@ -106,7 +108,6 @@ function startBot(appStatePath, ownerUID) {
         const input = args.slice(1).join(" ");
 
         // ==== Commands ====
-
         if (cmd === "/help") {
           return api.sendMessage(`
 📖 Jerry Bot Commands:
@@ -147,8 +148,8 @@ function startBot(appStatePath, ownerUID) {
         else if (cmd === "/lockemoji") {
           if (!input) return api.sendMessage("❌ Emoji do!", threadID);
 
-          // Basic emoji validation using unicode emoji regex
-          if (!/\p{Emoji}/u.test(input)) {
+          const emojiRegex = /\p{Emoji_Presentation}|\p{Emoji}\uFE0F/gu;
+          if (!emojiRegex.test(input)) {
             return api.sendMessage("❌ Valid emoji do!", threadID);
           }
 
@@ -176,9 +177,7 @@ function startBot(appStatePath, ownerUID) {
             const filePath = `locked_dp_${threadID}.jpg`;
             const fileStream = fs.createWriteStream(filePath);
             request(dpUrl)
-              .on("error", (e) => {
-                api.sendMessage("⚠️ DP download error!", threadID);
-              })
+              .on("error", (e) => api.sendMessage("⚠️ DP download error!", threadID))
               .pipe(fileStream)
               .on("finish", () => {
                 lockedDPs[threadID] = filePath;
