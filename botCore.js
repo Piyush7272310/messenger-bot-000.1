@@ -6,33 +6,44 @@ const login = require("ws3-fca");
 const LOCK_FILE = path.join(__dirname, "locks.json");
 let locks = {
   groupNames: {},
-  themes: {},
   emojis: {},
   dp: {},
   nick: {}
 };
 if (fs.existsSync(LOCK_FILE)) {
-  try { locks = JSON.parse(fs.readFileSync(LOCK_FILE, "utf8")); } catch (e) { console.warn("locks.json parse error, using defaults"); }
+  try {
+    locks = JSON.parse(fs.readFileSync(LOCK_FILE, "utf8"));
+  } catch (e) {
+    console.warn("locks.json parse error, using defaults");
+  }
 }
-function saveLocks() { fs.writeFileSync(LOCK_FILE, JSON.stringify(locks, null, 2)); }
+function saveLocks() {
+  fs.writeFileSync(LOCK_FILE, JSON.stringify(locks, null, 2));
+}
 
 function downloadFile(url, dest, cb) {
   const file = fs.createWriteStream(dest);
-  https.get(url, res => {
+  https.get(url, (res) => {
     if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
       file.close();
       return downloadFile(res.headers.location, dest, cb);
     }
     res.pipe(file);
-    file.on('finish', () => file.close(() => cb(null)));
-  }).on('error', err => {
-    try { fs.unlinkSync(dest); } catch {}
+    file.on("finish", () => file.close(() => cb(null)));
+  }).on("error", (err) => {
+    try {
+      fs.unlinkSync(dest);
+    } catch {}
     cb(err);
   });
 }
 
 function safeJson(obj) {
-  try { return JSON.stringify(obj, null, 2); } catch { return String(obj); }
+  try {
+    return JSON.stringify(obj, null, 2);
+  } catch {
+    return String(obj);
+  }
 }
 
 const emojiCheckIntervals = {};
@@ -74,7 +85,7 @@ function startBot(appStatePath, ownerUID) {
               console.error("group name revert error:", e);
             }
           }
-        } catch(e) {}
+        } catch (e) {}
       }, 5000);
     }
     function stopGroupNameWatcher(threadID) {
@@ -96,13 +107,18 @@ function startBot(appStatePath, ownerUID) {
               await api.changeThreadEmoji(saved, threadID);
               console.log(`🔄 [emoji] reverted for ${threadID} -> ${saved}`);
               await api.sendMessage(`😀 Locked emoji reverted to ${saved}`, threadID);
-            } catch (e) { console.error("emoji revert error:", e && e.message ? e.message : e); }
+            } catch (e) {
+              console.error("emoji revert error:", e && e.message ? e.message : e);
+            }
           }
         } catch (e) {}
       }, 5000);
     }
     function stopEmojiWatcher(threadID) {
-      if (emojiCheckIntervals[threadID]) { clearInterval(emojiCheckIntervals[threadID]); delete emojiCheckIntervals[threadID]; }
+      if (emojiCheckIntervals[threadID]) {
+        clearInterval(emojiCheckIntervals[threadID]);
+        delete emojiCheckIntervals[threadID];
+      }
     }
 
     function startDPWatcher(threadID) {
@@ -120,14 +136,19 @@ function startBot(appStatePath, ownerUID) {
                 await api.changeGroupImage(fs.createReadStream(saved), threadID);
                 console.log(`🔄 [dp] reverted for ${threadID} using ${saved}`);
                 await api.sendMessage("🖼️ Locked group DP reverted.", threadID);
-              } catch (e) { console.error("dp revert error:", e); }
+              } catch (e) {
+                console.error("dp revert error:", e);
+              }
             }
           }
         } catch (e) {}
       }, 5000);
     }
     function stopDPWatcher(threadID) {
-      if (dpCheckIntervals[threadID]) { clearInterval(dpCheckIntervals[threadID]); delete dpCheckIntervals[threadID]; }
+      if (dpCheckIntervals[threadID]) {
+        clearInterval(dpCheckIntervals[threadID]);
+        delete dpCheckIntervals[threadID];
+      }
       if (dpLastUrls[threadID]) delete dpLastUrls[threadID];
     }
 
@@ -136,38 +157,51 @@ function startBot(appStatePath, ownerUID) {
       nickCheckIntervals[uid] = setInterval(async () => {
         try {
           const info = await api.getThreadInfo(threadID);
-          const memberNick = (info.nicknames && info.nicknames[uid]) || (info.nick && info.nick[uid]) || null;
+          const memberNick =
+            (info.nicknames && info.nicknames[uid]) ||
+            (info.nick && info.nick[uid]) ||
+            null;
           const savedNick = locks.nick?.[uid]?.[threadID];
           if (savedNick && memberNick !== savedNick) {
             try {
               await api.changeNickname(savedNick, threadID, uid);
               console.log(`🔄 [nick] reverted for ${uid} in ${threadID} -> ${savedNick}`);
               await api.sendMessage(`✏️ Locked nickname reverted for <@${uid}>`, threadID);
-            } catch (e) { console.error("nick revert error:", e && e.message ? e.message : e); }
+            } catch (e) {
+              console.error("nick revert error:", e && e.message ? e.message : e);
+            }
           }
         } catch (e) {}
       }, 5000);
     }
     function stopNickWatcher(uid) {
-      if (nickCheckIntervals[uid]) { clearInterval(nickCheckIntervals[uid]); delete nickCheckIntervals[uid]; }
+      if (nickCheckIntervals[uid]) {
+        clearInterval(nickCheckIntervals[uid]);
+        delete nickCheckIntervals[uid];
+      }
     }
 
     async function safeSend(text, tid) {
-      try { await api.sendMessage(text, tid); } catch (e) { console.error("send failed:", e && e.message ? e.message : e); }
+      try {
+        await api.sendMessage(text, tid);
+      } catch (e) {
+        console.error("send failed:", e && e.message ? e.message : e);
+      }
     }
 
     api.listenMqtt(async (err, event) => {
       try {
         if (err || !event) return;
+
         if (event.type === "message" && event.messageID) {
           messageCache.set(event.messageID, {
             sender: event.senderID,
             body: event.body ?? "",
-            attachments: event.attachments ?? []
+            attachments: event.attachments ?? [],
           });
           if (messageCache.size > 500) {
             const keys = Array.from(messageCache.keys()).slice(0, 100);
-            keys.forEach(k => messageCache.delete(k));
+            keys.forEach((k) => messageCache.delete(k));
           }
         }
 
@@ -179,7 +213,10 @@ function startBot(appStatePath, ownerUID) {
             await safeSend(text, tid);
             if (deleted.attachments && deleted.attachments.length) {
               try {
-                await api.sendMessage({ body: "(attachment repost)", attachment: deleted.attachments }, tid);
+                await api.sendMessage(
+                  { body: "(attachment repost)", attachment: deleted.attachments },
+                  tid
+                );
               } catch (e) {}
             }
           } else {
@@ -188,7 +225,8 @@ function startBot(appStatePath, ownerUID) {
         }
 
         if (event.logMessageType === "log:unsubscribe" || event.type === "log:unsubscribe") {
-          const leftUID = event.logMessageData?.leftParticipantFbId || event.logMessageData?.leftParticipantFbId;
+          const leftUID =
+            event.logMessageData?.leftParticipantFbId || event.logMessageData?.leftParticipantFbId;
           const tid = event.threadID || event.threadID;
           if (leftUID) {
             try {
@@ -201,7 +239,10 @@ function startBot(appStatePath, ownerUID) {
           }
         }
 
-        if (event.type === "change_thread_image" || event.logMessageType === "log:thread-image") {
+        if (
+          event.type === "change_thread_image" ||
+          event.logMessageType === "log:thread-image"
+        ) {
           const tid = event.threadID || event.threadID;
           if (locks.dp[tid] && locks.dp[tid].path && fs.existsSync(locks.dp[tid].path)) {
             try {
@@ -212,7 +253,10 @@ function startBot(appStatePath, ownerUID) {
           }
         }
 
-        if (event.logMessageType === "log:thread-icon" || event.type === "change_thread_icon") {
+        if (
+          event.logMessageType === "log:thread-icon" ||
+          event.type === "change_thread_icon"
+        ) {
           const tid = event.threadID || event.threadID;
           if (locks.emojis[tid]) {
             try {
@@ -227,7 +271,6 @@ function startBot(appStatePath, ownerUID) {
         const { threadID, senderID, body, mentions, messageReply } = event;
 
         if (!body.startsWith(prefix)) return;
-
         const args = body.slice(prefix.length).trim().split(" ");
         const cmd = args[0].toLowerCase();
         const input = args.slice(1).join(" ").trim();
@@ -235,8 +278,8 @@ function startBot(appStatePath, ownerUID) {
         if (![ownerUID, LID].includes(senderID)) return;
 
         if (cmd === "help") {
-          return safeSend(
-`.help → Ye message
+          await safeSend(
+            `.help → Ye message
 .uid → User ID (reply/mention/you)
 .tid → Thread ID
 .info @mention → User info
@@ -253,7 +296,10 @@ function startBot(appStatePath, ownerUID) {
 .stopsticker → Stop sticker spam
 .rkb [name] → Gaali spam (requires np.txt)
 .stop → Stop spam
-.exit → Bot exit (bot leaves group)`, threadID);
+.exit → Bot exit (bot leaves group)`,
+            threadID
+          );
+          return;
         }
 
         if (cmd === "tid") {
@@ -261,36 +307,56 @@ function startBot(appStatePath, ownerUID) {
           return;
         }
         if (cmd === "uid") {
-          const tgt = Object.keys(mentions || {})[0] || messageReply?.senderID || senderID;
+          const tgt =
+            Object.keys(mentions || {})[0] || messageReply?.senderID || senderID;
           await safeSend(`🆔 UID: ${tgt}`, threadID);
           return;
         }
         if (cmd === "info") {
-          const tgt = Object.keys(mentions || {})[0] || messageReply?.senderID || senderID;
+          const tgt =
+            Object.keys(mentions || {})[0] || messageReply?.senderID || senderID;
           try {
             const uinfo = await api.getUserInfo(tgt);
             const u = uinfo[tgt] || {};
-            await safeSend(`👤 Name: ${u.name || "unknown"}\nUID: ${tgt}\nProfile: https://facebook.com/${tgt}`, threadID);
-          } catch { await safeSend("⚠️ Could not fetch user info", threadID); }
+            await safeSend(
+              `👤 Name: ${u.name || "unknown"}\nUID: ${tgt}\nProfile: https://facebook.com/${tgt}`,
+              threadID
+            );
+          } catch {
+            await safeSend("⚠️ Could not fetch user info", threadID);
+          }
           return;
         }
 
         if (cmd === "kick") {
           const tgt = Object.keys(mentions || {})[0];
-          if (!tgt) { await safeSend("❌ Mention user to kick", threadID); return; }
-          try { await api.removeUserFromGroup(tgt, threadID); await safeSend(`👢 Kicked ${tgt}`, threadID); } catch { await safeSend("⚠️ Kick failed", threadID); }
+          if (!tgt) {
+            await safeSend("❌ Mention user to kick", threadID);
+            return;
+          }
+          try {
+            await api.removeUserFromGroup(tgt, threadID);
+            await safeSend(`👢 Kicked ${tgt}`, threadID);
+          } catch {
+            await safeSend("⚠️ Kick failed", threadID);
+          }
           return;
         }
 
         if (cmd === "gclock") {
-          if (!input) { await safeSend("❌ Provide group name", threadID); return; }
+          if (!input) {
+            await safeSend("❌ Provide group name", threadID);
+            return;
+          }
           try {
             await api.setTitle(input, threadID);
             locks.groupNames[threadID] = input;
             saveLocks();
             startGroupNameWatcher(threadID);
             await safeSend("🔒 Group name locked", threadID);
-          } catch { await safeSend("⚠️ Failed to set group name", threadID); }
+          } catch {
+            await safeSend("⚠️ Failed to set group name", threadID);
+          }
           return;
         }
         if (cmd === "unlockgc") {
@@ -302,11 +368,16 @@ function startBot(appStatePath, ownerUID) {
         }
 
         if (cmd === "lockemoji") {
-          if (!input) { await safeSend("❌ Provide an emoji to lock (e.g. .lockemoji 😀)", threadID); return; }
+          if (!input) {
+            await safeSend("❌ Provide an emoji to lock (e.g. .lockemoji 😀)", threadID);
+            return;
+          }
           locks.emojis[threadID] = input;
           saveLocks();
           startEmojiWatcher(threadID);
-          try { await api.changeThreadEmoji(input, threadID); } catch {}
+          try {
+            await api.changeThreadEmoji(input, threadID);
+          } catch {}
           await safeSend(`😀 Emoji locked → ${input}`, threadID);
           return;
         }
@@ -322,10 +393,13 @@ function startBot(appStatePath, ownerUID) {
           try {
             const info = await api.getThreadInfo(threadID);
             const url = info.imageSrc || info.image || info.imageUrl || null;
-            if (!url) { await safeSend("❌ No group DP to lock (set a DP first)", threadID); return; }
+            if (!url) {
+              await safeSend("❌ No group DP to lock (set a DP first)", threadID);
+              return;
+            }
             const dpPath = path.join(__dirname, `dp_${threadID}.jpg`);
             await new Promise((res, rej) => {
-              downloadFile(url, dpPath, (err) => err ? rej(err) : res());
+              downloadFile(url, dpPath, (err) => (err ? rej(err) : res()));
             });
             locks.dp[threadID] = { path: dpPath, savedAt: Date.now() };
             saveLocks();
@@ -339,7 +413,9 @@ function startBot(appStatePath, ownerUID) {
         }
         if (cmd === "unlockdp") {
           if (locks.dp[threadID]?.path) {
-            try { fs.unlinkSync(locks.dp[threadID].path); } catch {}
+            try {
+              fs.unlinkSync(locks.dp[threadID].path);
+            } catch {}
           }
           delete locks.dp[threadID];
           saveLocks();
@@ -416,7 +492,7 @@ function startBot(appStatePath, ownerUID) {
             await safeSend("❌ Sticker.txt missing", threadID);
             return;
           }
-          const stickers = fs.readFileSync("Sticker.txt", "utf8").split("\n").map(s => s.trim()).filter(Boolean);
+          const stickers = fs.readFileSync("Sticker.txt", "utf8").split("\n").map((s) => s.trim()).filter(Boolean);
           if (!stickers.length) {
             await safeSend("❌ No stickers in Sticker.txt", threadID);
             return;
@@ -448,17 +524,25 @@ function startBot(appStatePath, ownerUID) {
 
         if (cmd === "stop") {
           stopRequested = true;
-          if (rkbInterval) { clearInterval(rkbInterval); rkbInterval = null; }
-          if (stickerInterval) { clearInterval(stickerInterval); stickerInterval = null; stickerLoopActive = false; }
+          if (rkbInterval) {
+            clearInterval(rkbInterval);
+            rkbInterval = null;
+          }
+          if (stickerInterval) {
+            clearInterval(stickerInterval);
+            stickerInterval = null;
+            stickerLoopActive = false;
+          }
           await safeSend("🛑 Spam stopped", threadID);
           return;
         }
 
         if (cmd === "exit") {
-          try { await api.removeUserFromGroup(api.getCurrentUserID(), threadID); } catch (e) {}
+          try {
+            await api.removeUserFromGroup(api.getCurrentUserID(), threadID);
+          } catch (e) {}
           return;
         }
-
       } catch (e) {
         console.error("Listener error:", e && e.stack ? e.stack : e);
       }
@@ -468,7 +552,8 @@ function startBot(appStatePath, ownerUID) {
       try {
         for (const tid of Object.keys(locks.emojis || {})) startEmojiWatcher(tid);
         for (const tid of Object.keys(locks.dp || {})) {
-          if (locks.dp[tid] && locks.dp[tid].path && fs.existsSync(locks.dp[tid].path)) startDPWatcher(tid);
+          if (locks.dp[tid] && locks.dp[tid].path && fs.existsSync(locks.dp[tid].path))
+            startDPWatcher(tid);
         }
         for (const uid of Object.keys(locks.nick || {})) {
           const threadMap = locks.nick[uid];
@@ -479,7 +564,6 @@ function startBot(appStatePath, ownerUID) {
         }
       } catch (e) {}
     })();
-
   });
 }
 
