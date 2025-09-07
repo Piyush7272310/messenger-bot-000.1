@@ -222,9 +222,8 @@ api.listenMqtt(async (err, event) => {
     };  
 
     // ---------- built-in commands ----------  
-    if (cmd === "/help") {  
-      await safeSend(api,
-
+    if (cmd === "/help") {
+  await safeSend(api, `
 📖 Bot Commands:
 /help → This message
 /uid → User ID (mention/reply/owner fallback)
@@ -253,7 +252,7 @@ api.listenMqtt(async (err, event) => {
 /exit → Bot exit (bot leaves group)
 `, threadID);
   return;
-        }
+}
 
 if (cmd === "/tid") {  
       await safeSend(api, `🆔 Thread ID: ${threadID}`, threadID);  
