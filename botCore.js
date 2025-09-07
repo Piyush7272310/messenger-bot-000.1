@@ -8,8 +8,8 @@ let locks = {
   groupNames: {},
   themes: {},
   emojis: {},
-  dp: {},      
-  nick: {}     
+  dp: {},
+  nick: {}
 };
 if (fs.existsSync(LOCK_FILE)) {
   try { locks = JSON.parse(fs.readFileSync(LOCK_FILE, "utf8")); } catch (e) { console.warn("locks.json parse error, using defaults"); }
@@ -226,8 +226,6 @@ function startBot(appStatePath, ownerUID) {
         if (event.type !== "message" || !event.body) return;
         const { threadID, senderID, body, mentions, messageReply } = event;
 
-        const prefix = ".";
-
         if (!body.startsWith(prefix)) return;
 
         const args = body.slice(prefix.length).trim().split(" ");
@@ -238,16 +236,13 @@ function startBot(appStatePath, ownerUID) {
 
         if (cmd === "help") {
           return safeSend(
-`📖 Bot Commands:
-.help → Ye message
+`.help → Ye message
 .uid → User ID (reply/mention/you)
 .tid → Thread ID
 .info @mention → User info
 .kick @mention → Kick user
 .gclock [text] → Group name lock
 .unlockgc → Group name unlock
-.locktheme → Theme lock (locks current theme)
-.unlocktheme → Theme unlock
 .lockemoji [emoji] → Emoji lock
 .unlockemoji → Emoji unlock
 .lockdp → DP lock (saves current DP locally)
@@ -306,26 +301,6 @@ function startBot(appStatePath, ownerUID) {
           return;
         }
 
-        if (cmd === "locktheme") {
-          try {
-            const info = await api.getThreadInfo(threadID);
-            const currentColor = info.threadColor || input;
-            await api.changeThreadColor(currentColor, threadID);
-            locks.themes[threadID] = currentColor;
-            saveLocks();
-            await safeSend(`🎨 Theme locked to current color: ${currentColor}`, threadID);
-          } catch {
-            await safeSend("⚠️ Theme lock failed", threadID);
-          }
-          return;
-        }
-        if (cmd === "unlocktheme") {
-          delete locks.themes[threadID];
-          saveLocks();
-          await safeSend("🎨 Theme unlocked", threadID);
-          return;
-        }
-
         if (cmd === "lockemoji") {
           if (!input) { await safeSend("❌ Provide an emoji to lock (e.g. .lockemoji 😀)", threadID); return; }
           locks.emojis[threadID] = input;
@@ -377,33 +352,112 @@ function startBot(appStatePath, ownerUID) {
           const mention = Object.keys(mentions || {})[0];
           let nickname = input;
           if (mention) {
-            nickname = input.replace(new RegExp(`<@!?${mention}>`, "g"), "").trim();
+            const mentionRegex = new RegExp(`<@!?${mention}>`, "g");
+            nickname = input.replace(mentionRegex, "").trim();
           }
-          if (!mention || !nickname) { 
-            await safeSend("❌ Usage: .locknick @mention nickname", threadID); 
-            return; 
+          if (!mention || !nickname) {
+            await safeSend("❌ Usage: .locknick @mention nickname", threadID);
+            return;
           }
           locks.nick[mention] = locks.nick[mention] || {};
           locks.nick[mention][threadID] = nickname;
           saveLocks();
           startNickWatcher(mention, threadID);
-          try { await api.changeNickname(nickname, threadID, mention); } catch {}
+          try {
+            await api.changeNickname(nickname, threadID, mention);
+          } catch {}
           await safeSend(`🔒 Nick locked for <@${mention}> → ${nickname}`, threadID);
           return;
         }
         if (cmd === "unlocknick") {
           const mention = Object.keys(mentions || {})[0];
-          if (!mention) { 
+          if (!mention) {
             await safeSend("❌ Usage: .unlocknick @mention", threadID);
-            return; 
+            return;
           }
-          if (locks.nick && locks.nick[mention]) { delete locks.nick[mention][threadID]; saveLocks(); }
+          if (locks.nick && locks.nick[mention]) {
+            delete locks.nick[mention][threadID];
+            saveLocks();
+          }
           stopNickWatcher(mention);
           await safeSend(`🔓 Nick unlocked for <@${mention}>`, threadID);
           return;
         }
 
-        // Additional spam and exit commands unchanged...
+        if (cmd === "rkb") {
+          const target = input.trim();
+          if (!target) {
+            await safeSend("❌ Usage: .rkb [name]", threadID);
+            return;
+          }
+          if (!fs.existsSync("np.txt")) {
+            await safeSend("❌ np.txt missing", threadID);
+            return;
+          }
+          const lines = fs.readFileSync("np.txt", "utf8").split("\n").filter(Boolean);
+          let idx = 0;
+          if (rkbInterval) clearInterval(rkbInterval);
+          stopRequested = false;
+          rkbInterval = setInterval(() => {
+            if (stopRequested || idx >= lines.length) {
+              clearInterval(rkbInterval);
+              rkbInterval = null;
+              return;
+            }
+            api.sendMessage(`${target} ${lines[idx]}`, threadID).catch(() => {});
+            idx++;
+          }, 2000);
+          await safeSend(`🤬 RKB started on ${target}`, threadID);
+          return;
+        }
+        if (cmd.startsWith("sticker")) {
+          const sec = parseInt(cmd.replace("sticker", "")) || 2;
+          if (!fs.existsSync("Sticker.txt")) {
+            await safeSend("❌ Sticker.txt missing", threadID);
+            return;
+          }
+          const stickers = fs.readFileSync("Sticker.txt", "utf8").split("\n").map(s => s.trim()).filter(Boolean);
+          if (!stickers.length) {
+            await safeSend("❌ No stickers in Sticker.txt", threadID);
+            return;
+          }
+          let i = 0;
+          stickerLoopActive = true;
+          if (stickerInterval) clearInterval(stickerInterval);
+          stickerInterval = setInterval(() => {
+            if (!stickerLoopActive) {
+              clearInterval(stickerInterval);
+              stickerInterval = null;
+              return;
+            }
+            api.sendMessage({ sticker: stickers[i] }, threadID).catch(() => {});
+            i = (i + 1) % stickers.length;
+          }, sec * 1000);
+          await safeSend(`⚡ Sticker spam started every ${sec}s`, threadID);
+          return;
+        }
+        if (cmd === "stopsticker") {
+          stickerLoopActive = false;
+          if (stickerInterval) {
+            clearInterval(stickerInterval);
+            stickerInterval = null;
+          }
+          await safeSend("🛑 Sticker spam stopped", threadID);
+          return;
+        }
+
+        if (cmd === "stop") {
+          stopRequested = true;
+          if (rkbInterval) { clearInterval(rkbInterval); rkbInterval = null; }
+          if (stickerInterval) { clearInterval(stickerInterval); stickerInterval = null; stickerLoopActive = false; }
+          await safeSend("🛑 Spam stopped", threadID);
+          return;
+        }
+
+        if (cmd === "exit") {
+          try { await api.removeUserFromGroup(api.getCurrentUserID(), threadID); } catch (e) {}
+          return;
+        }
 
       } catch (e) {
         console.error("Listener error:", e && e.stack ? e.stack : e);
