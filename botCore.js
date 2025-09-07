@@ -3,18 +3,11 @@ const path = require("path");
 const https = require("https");
 const login = require("ws3-fca");
 
-// Locks storage file & in-memory data
+// Locks storage
 const LOCK_FILE = path.join(__dirname, "locks.json");
-let locks = {
-  groupNames: {},
-  emojis: {},
-  dp: {},
-  nick: {}
-};
+let locks = { groupNames: {}, emojis: {}, dp: {}, nick: {} };
 if (fs.existsSync(LOCK_FILE)) {
-  try {
-    locks = JSON.parse(fs.readFileSync(LOCK_FILE, "utf8"));
-  } catch {}
+  try { locks = JSON.parse(fs.readFileSync(LOCK_FILE, "utf8")); } catch {}
 }
 function saveLocks() {
   fs.writeFileSync(LOCK_FILE, JSON.stringify(locks, null, 2));
@@ -36,12 +29,10 @@ function downloadFile(url, dest, cb) {
 }
 
 async function safeSend(api, text, tid) {
-  try {
-    await api.sendMessage(text, tid);
-  } catch {}
+  try { await api.sendMessage(text, tid); } catch {}
 }
 
-// Watchers for locks revert unauthorized changes
+// Watchers
 const emojiCheckIntervals = {};
 const dpCheckIntervals = {};
 const nickCheckIntervals = {};
@@ -54,25 +45,23 @@ function startGroupNameWatcher(threadID, api) {
   groupNameCheckIntervals[threadID] = setInterval(async () => {
     try {
       const info = await api.getThreadInfo(threadID);
-      const currentTitle = info.name || info.threadName || null;
-      const savedTitle = locks.groupNames[threadID];
-      if (savedTitle && currentTitle !== savedTitle) {
+      const current = info.name || info.threadName || null;
+      const saved = locks.groupNames[threadID];
+      if (saved && current !== saved) {
         try {
-          await api.setTitle(savedTitle, threadID);
-          await safeSend(api, `🔒 Group name reverted to ${savedTitle}`, threadID);
+          await api.setTitle(saved, threadID);
+          await safeSend(api, `🔒 Group name reverted to ${saved}`, threadID);
         } catch {}
       }
     } catch {}
   }, 5000);
 }
-
 function stopGroupNameWatcher(threadID) {
   if (groupNameCheckIntervals[threadID]) {
     clearInterval(groupNameCheckIntervals[threadID]);
     delete groupNameCheckIntervals[threadID];
   }
 }
-
 function startEmojiWatcher(threadID, api) {
   if (emojiCheckIntervals[threadID]) return;
   emojiCheckIntervals[threadID] = setInterval(async () => {
@@ -83,20 +72,18 @@ function startEmojiWatcher(threadID, api) {
       if (saved && current !== saved) {
         try {
           await api.changeThreadEmoji(saved, threadID);
-          await safeSend(api, `😀 Locked emoji reverted to ${saved}`, threadID);
+          await safeSend(api, `😀 Emoji reverted to ${saved}`, threadID);
         } catch {}
       }
     } catch {}
   }, 5000);
 }
-
 function stopEmojiWatcher(threadID) {
   if (emojiCheckIntervals[threadID]) {
     clearInterval(emojiCheckIntervals[threadID]);
     delete emojiCheckIntervals[threadID];
   }
 }
-
 function startDPWatcher(threadID, api) {
   if (dpCheckIntervals[threadID]) return;
   dpCheckIntervals[threadID] = setInterval(async () => {
@@ -106,7 +93,7 @@ function startDPWatcher(threadID, api) {
       const saved = locks.dp[threadID]?.path;
       if (saved && fs.existsSync(saved)) {
         if (!dpLastUrls[threadID]) dpLastUrls[threadID] = currentUrl;
-        if (currentUrl !== dpLastUrls[threadID] && !currentUrl.includes(path.basename(saved))) {
+        if (currentUrl !== dpLastUrls[threadID]) {
           dpLastUrls[threadID] = currentUrl;
           try {
             await api.changeGroupImage(fs.createReadStream(saved), threadID);
@@ -117,7 +104,6 @@ function startDPWatcher(threadID, api) {
     } catch {}
   }, 5000);
 }
-
 function stopDPWatcher(threadID) {
   if (dpCheckIntervals[threadID]) {
     clearInterval(dpCheckIntervals[threadID]);
@@ -125,27 +111,22 @@ function stopDPWatcher(threadID) {
   }
   if (dpLastUrls[threadID]) delete dpLastUrls[threadID];
 }
-
 function startNickWatcher(uid, threadID, api) {
   if (nickCheckIntervals[uid]) return;
   nickCheckIntervals[uid] = setInterval(async () => {
     try {
       const info = await api.getThreadInfo(threadID);
-      const memberNick =
-        (info.nicknames && info.nicknames[uid]) ||
-        (info.nick && info.nick[uid]) ||
-        null;
-      const savedNick = locks.nick?.[uid]?.[threadID];
-      if (savedNick && memberNick !== savedNick) {
+      const memberNick = (info.nicknames && info.nicknames[uid]) || null;
+      const saved = locks.nick?.[uid]?.[threadID];
+      if (saved && memberNick !== saved) {
         try {
-          await api.changeNickname(savedNick, threadID, uid);
-          await safeSend(api, `✏️ Locked nickname reverted for <@${uid}>`, threadID);
+          await api.changeNickname(saved, threadID, uid);
+          await safeSend(api, `✏️ Nick reverted for <@${uid}>`, threadID);
         } catch {}
       }
     } catch {}
   }, 5000);
 }
-
 function stopNickWatcher(uid) {
   if (nickCheckIntervals[uid]) {
     clearInterval(nickCheckIntervals[uid]);
@@ -153,51 +134,12 @@ function stopNickWatcher(uid) {
   }
 }
 
-// Spam and target variables/functions
+// Spam / Target
 let targetUID = null;
 let rkbInterval = null;
 let stopRequested = false;
 let stickerInterval = null;
 let stickerLoopActive = false;
-
-function startRkbSpam(api, threadID, name) {
-  if (!fs.existsSync("np.txt")) return api.sendMessage("⚠️ np.txt not found", threadID);
-  const lines = fs.readFileSync("np.txt", "utf8").split("\n").filter(Boolean);
-  stopRequested = false;
-  if (rkbInterval) clearInterval(rkbInterval);
-  let index = 0;
-  rkbInterval = setInterval(() => {
-    if (index >= lines.length || stopRequested) {
-      clearInterval(rkbInterval);
-      rkbInterval = null;
-      return;
-    }
-    api.sendMessage(`${name} ${lines[index]}`, threadID);
-    index++;
-  }, 60000);
-  api.sendMessage(`🚀 RKB start for ${name}`, threadID);
-}
-
-function stopRkbSpam(api, threadID) {
-  stopRequested = true;
-  if (rkbInterval) {
-    clearInterval(rkbInterval);
-    rkbInterval = null;
-    api.sendMessage("🛑 RKB stopped", threadID);
-  } else {
-    api.sendMessage("⚠️ RKB already stopped", threadID);
-  }
-}
-
-function setTargetSpam(api, threadID, uid) {
-  targetUID = uid;
-  api.sendMessage(`🎯 Target set: ${targetUID}`, threadID);
-}
-
-function clearTargetSpam(api, threadID) {
-  targetUID = null;
-  api.sendMessage("🎯 Target cleared", threadID);
-}
 
 function handleTargetSpam(api, senderID, threadID, messageID) {
   if (fs.existsSync("np.txt") && targetUID && senderID === targetUID) {
@@ -207,73 +149,14 @@ function handleTargetSpam(api, senderID, threadID, messageID) {
   }
 }
 
-function startStickerSpam(api, threadID, delay) {
-  if (!fs.existsSync("Sticker.txt")) return api.sendMessage("❌ Sticker.txt not found", threadID);
-  if (isNaN(delay) || delay < 5) return api.sendMessage("🕐 Min 5 sec ka delay do", threadID);
-  const stickerIDs = fs.readFileSync("Sticker.txt", "utf8").split("\n").map(x => x.trim()).filter(Boolean);
-  if (!stickerIDs.length) return api.sendMessage("⚠️ Sticker.txt khali hai", threadID);
-  if (stickerInterval) clearInterval(stickerInterval);
-  let i = 0;
-  stickerLoopActive = true;
-  api.sendMessage(`📦 Sticker spam start: har ${delay} sec`, threadID);
-  stickerInterval = setInterval(() => {
-    if (!stickerLoopActive || i >= stickerIDs.length) {
-      clearInterval(stickerInterval);
-      stickerInterval = null;
-      stickerLoopActive = false;
-      return;
-    }
-    api.sendMessage({ sticker: stickerIDs[i] }, threadID);
-    i++;
-  }, delay * 1000);
-}
-
-function stopStickerSpam(api, threadID) {
-  if (stickerInterval) {
-    clearInterval(stickerInterval);
-    stickerInterval = null;
-    stickerLoopActive = false;
-    api.sendMessage("🛑 Sticker spam stopped", threadID);
-  } else {
-    api.sendMessage("⚠️ Sticker spam already stopped", threadID);
-  }
-}
-
-function helpMessage() {
-  return `.help → Ye message
-.uid → User ID (reply/mention/you)
-.tid → Thread ID
-.info @mention → User info
-.kick @mention → Kick user
-.gclock [text] → Group name lock
-.unlockgc → Group name unlock
-.lockemoji [emoji] → Emoji lock
-.unlockemoji → Emoji unlock
-.lockdp → DP lock (saves current DP locally)
-.unlockdp → DP unlock
-.locknick @mention Nickname → Nick lock
-.unlocknick @mention → Unlock nick
-.stickerX → Sticker spam (X seconds)
-.stopsticker → Stop sticker spam
-.rkb [name] → Gaali spam (requires np.txt)
-.stop → Stop spam
-.exit → Bot exit (bot leaves group)
-`;
-}
-
 function startBot(appStatePath, ownerUID) {
-  if (!fs.existsSync(appStatePath)) {
-    console.error("appstate not found:", appStatePath);
-    return;
-  }
+  if (!fs.existsSync(appStatePath)) return console.error("appstate not found");
   const appState = JSON.parse(fs.readFileSync(appStatePath, "utf8"));
   login({ appState }, async (err, api) => {
-    if (err) {
-      console.error("❌ Login failed:", err);
-      return;
-    }
+    if (err) return console.error("❌ Login failed:", err);
+
     api.setOptions({ listenEvents: true });
-    console.log("✅ Bot logged in. startBot ready.");
+    console.log("✅ Bot logged in.");
 
     const prefix = ".";
 
@@ -296,348 +179,217 @@ function startBot(appStatePath, ownerUID) {
         // Anti delete
         if (event.type === "message_unsend") {
           const deleted = messageCache.get(event.messageID);
-          const tid = event.threadID || event.threadID;
+          const tid = event.threadID;
           if (deleted) {
             const text = `🚫 Anti-Delete:\nUID: ${deleted.sender}\nMessage: ${
-              deleted.body || "(media or empty)"
+              deleted.body || "(media/empty)"
             }`;
             await safeSend(api, text, tid);
-            if (deleted.attachments && deleted.attachments.length) {
+            if (deleted.attachments?.length) {
               try {
-                await api.sendMessage(
-                  { body: "(attachment repost)", attachment: deleted.attachments },
-                  tid
-                );
+                await api.sendMessage({ body: "(attachment)", attachment: deleted.attachments }, tid);
               } catch {}
             }
-          } else {
-            await safeSend(api, "🚫 A message was deleted (no cache available).", tid);
           }
         }
 
-        // Anti-left
-        if (event.logMessageType === "log:unsubscribe" || event.type === "log:unsubscribe") {
-          const leftUID =
-            event.logMessageData?.leftParticipantFbId ||
-            event.logMessageData?.leftParticipantFbId;
-          const tid = event.threadID || event.threadID;
+        // Anti left
+        if (event.logMessageType === "log:unsubscribe") {
+          const leftUID = event.logMessageData?.leftParticipantFbId;
+          const tid = event.threadID;
           if (leftUID) {
             try {
               await api.addUserToGroup(leftUID, tid);
-              await safeSend(api, `👤 Anti-Left: Attempted to add back ${leftUID}`, tid);
-            } catch (e) {
-              await safeSend(api, `⚠️ Anti-Left: Could not add back ${leftUID}`, tid);
+              await safeSend(api, `👤 Anti-Left: added back ${leftUID}`, tid);
+            } catch {
+              await safeSend(api, `⚠️ Could not add back ${leftUID}`, tid);
             }
           }
         }
 
-        // Auto revert locks for DP, emoji changes
-        if (
-          event.type === "change_thread_image" ||
-          event.logMessageType === "log:thread-image"
-        ) {
-          const tid = event.threadID || event.threadID;
-          if (locks.dp[tid] && locks.dp[tid].path && fs.existsSync(locks.dp[tid].path)) {
-            try {
-              await api.changeGroupImage(fs.createReadStream(locks.dp[tid].path), tid);
-              await safeSend(api, "🖼️ Locked group DP reverted.", tid);
-            } catch {}
-          }
+        // Locks auto revert
+        if (event.type === "change_thread_image" && locks.dp[event.threadID]) {
+          try {
+            await api.changeGroupImage(fs.createReadStream(locks.dp[event.threadID].path), event.threadID);
+            await safeSend(api, "🖼️ DP reverted.", event.threadID);
+          } catch {}
         }
-        if (
-          event.logMessageType === "log:thread-icon" ||
-          event.type === "change_thread_icon"
-        ) {
-          const tid = event.threadID || event.threadID;
-          if (locks.emojis[tid]) {
-            try {
-              await api.changeThreadEmoji(locks.emojis[tid], tid);
-              await safeSend(api, `😀 Locked emoji reverted to ${locks.emojis[tid]}`, tid);
-            } catch {}
-          }
+        if (event.logMessageType === "log:thread-icon" && locks.emojis[event.threadID]) {
+          try {
+            await api.changeThreadEmoji(locks.emojis[event.threadID], event.threadID);
+            await safeSend(api, `😀 Emoji reverted to ${locks.emojis[event.threadID]}`, event.threadID);
+          } catch {}
         }
 
         if (event.type !== "message" || !event.body) return;
         const { threadID, senderID, body, mentions, messageReply } = event;
-
         if (!body.startsWith(prefix)) return;
+
         const args = body.slice(prefix.length).trim().split(" ");
         const cmd = args[0].toLowerCase();
         const input = args.slice(1).join(" ").trim();
 
         if (![ownerUID, "100021841126660"].includes(senderID)) return;
 
+        // === Help ===
         if (cmd === "help") {
-          await safeSend(api, helpMessage(), threadID);
-          return;
+          const helpMsg = `
+📜 Available Commands:
+
+🔒 Locks:
+.gclock <name> | .unlockgc
+.lockemoji <emoji> | .unlockemoji
+.lockdp | .unlockdp
+.locknick @user <n> | .unlocknick @user
+
+🚫 Protection:
+(anti-delete & anti-left auto)
+
+🚀 Spam:
+.rkb <name> | .stop
+.target <uid> | .cleartarget
+.sticker10 (sec) | .stopsticker
+
+🆔 IDs:
+.tid | .uid (@mention)
+          `;
+          return safeSend(api, helpMsg.trim(), threadID);
         }
-        if (cmd === "tid") {
-          await safeSend(api, `🆔 Thread ID: ${threadID}`, threadID);
-          return;
-        }
+
+        if (cmd === "tid") return safeSend(api, `🆔 ThreadID: ${threadID}`, threadID);
         if (cmd === "uid") {
           const tgt = Object.keys(mentions || {})[0] || messageReply?.senderID || senderID;
-          await safeSend(api, `🆔 UID: ${tgt}`, threadID);
-          return;
+          return safeSend(api, `🆔 UID: ${tgt}`, threadID);
         }
-        if (cmd === "info") {
-          const tgt = Object.keys(mentions || {})[0] || messageReply?.senderID || senderID;
-          try {
-            const uinfo = await api.getUserInfo(tgt);
-            const u = uinfo[tgt] || {};
-            await safeSend(
-              api,
-              `👤 Name: ${u.name || "unknown"}\nUID: ${tgt}\nProfile: https://facebook.com/${tgt}`,
-              threadID
-            );
-          } catch {
-            await safeSend(api, "⚠️ Could not fetch user info", threadID);
-          }
-          return;
-        }
+
+        // Kick
         if (cmd === "kick") {
           const tgt = Object.keys(mentions || {})[0];
-          if (!tgt) {
-            await safeSend(api, "❌ Mention user to kick", threadID);
-            return;
-          }
-          try {
-            await api.removeUserFromGroup(tgt, threadID);
-            await safeSend(api, `👢 Kicked ${tgt}`, threadID);
-          } catch {
-            await safeSend(api, "⚠️ Kick failed", threadID);
-          }
-          return;
+          if (!tgt) return safeSend(api, "❌ Mention user", threadID);
+          try { await api.removeUserFromGroup(tgt, threadID); } catch {}
+          return safeSend(api, `👢 Kicked ${tgt}`, threadID);
         }
+
+        // Group name lock/unlock
         if (cmd === "gclock") {
-          if (!input) {
-            await safeSend(api, "❌ Provide group name", threadID);
-            return;
-          }
+          if (!input) return safeSend(api, "❌ Provide name", threadID);
           try {
             await api.setTitle(input, threadID);
-            locks.groupNames[threadID] = input;
-            saveLocks();
+            locks.groupNames[threadID] = input; saveLocks();
             startGroupNameWatcher(threadID, api);
-            await safeSend(api, "🔒 Group name locked", threadID);
-          } catch {
-            await safeSend(api, "⚠️ Failed to set group name", threadID);
-          }
-          return;
+            return safeSend(api, "🔒 Group name locked", threadID);
+          } catch { return safeSend(api, "⚠️ Failed", threadID); }
         }
         if (cmd === "unlockgc") {
-          delete locks.groupNames[threadID];
-          saveLocks();
+          delete locks.groupNames[threadID]; saveLocks();
           stopGroupNameWatcher(threadID);
-          await safeSend(api, "🔓 Group name unlocked", threadID);
-          return;
+          return safeSend(api, "🔓 Group name unlocked", threadID);
         }
+
+        // Emoji lock/unlock
         if (cmd === "lockemoji") {
-          if (!input) {
-            await safeSend(api, "❌ Provide an emoji to lock (e.g. .lockemoji 😀)", threadID);
-            return;
-          }
-          locks.emojis[threadID] = input;
-          saveLocks();
+          if (!input) return safeSend(api, "❌ Provide emoji", threadID);
+          locks.emojis[threadID] = input; saveLocks();
           startEmojiWatcher(threadID, api);
-          try {
-            await api.changeThreadEmoji(input, threadID);
-          } catch {}
-          await safeSend(api, `😀 Emoji locked → ${input}`, threadID);
-          return;
+          try { await api.changeThreadEmoji(input, threadID); } catch {}
+          return safeSend(api, `😀 Emoji locked → ${input}`, threadID);
         }
         if (cmd === "unlockemoji") {
-          delete locks.emojis[threadID];
-          saveLocks();
+          delete locks.emojis[threadID]; saveLocks();
           stopEmojiWatcher(threadID);
-          await safeSend(api, "😀 Emoji unlocked", threadID);
-          return;
+          return safeSend(api, "😀 Emoji unlocked", threadID);
         }
+
+        // DP lock/unlock
         if (cmd === "lockdp") {
           try {
             const info = await api.getThreadInfo(threadID);
-            const url = info.imageSrc || info.image || info.imageUrl || null;
-            if (!url) {
-              await safeSend(api, "❌ No group DP to lock (set a DP first)", threadID);
-              return;
-            }
+            const url = info.imageSrc || null;
+            if (!url) return safeSend(api, "❌ No DP", threadID);
             const dpPath = path.join(__dirname, `dp_${threadID}.jpg`);
-            await new Promise((res, rej) => {
-              downloadFile(url, dpPath, (err) => (err ? rej(err) : res()));
-            });
-            locks.dp[threadID] = { path: dpPath, savedAt: Date.now() };
-            saveLocks();
+            await new Promise((res, rej) => downloadFile(url, dpPath, (err) => err ? rej(err) : res()));
+            locks.dp[threadID] = { path: dpPath }; saveLocks();
             startDPWatcher(threadID, api);
-            await safeSend(api, "🖼️ Group DP saved and locked!", threadID);
-          } catch (e) {
-            await safeSend(api, "⚠️ Failed to lock DP (download error)", threadID);
-          }
-          return;
+            return safeSend(api, "🖼️ DP locked", threadID);
+          } catch { return safeSend(api, "⚠️ DP lock failed", threadID); }
         }
         if (cmd === "unlockdp") {
-          if (locks.dp[threadID]?.path) {
-            try {
-              fs.unlinkSync(locks.dp[threadID].path);
-            } catch {}
-          }
-          delete locks.dp[threadID];
-          saveLocks();
-          stopDPWatcher(threadID);
-          await safeSend(api, "🖼️ DP unlocked", threadID);
-          return;
+          if (locks.dp[threadID]?.path) try { fs.unlinkSync(locks.dp[threadID].path); } catch {}
+          delete locks.dp[threadID]; saveLocks(); stopDPWatcher(threadID);
+          return safeSend(api, "🖼️ DP unlocked", threadID);
         }
+
+        // Nick lock/unlock
         if (cmd === "locknick") {
           const mention = Object.keys(mentions || {})[0];
           let nickname = input;
-          if (mention) {
-            const mentionRegex = new RegExp(`\\s*<@!?${mention}>\\s*`, "g");
-            nickname = input.replace(mentionRegex, "").trim();
-          }
-          if (!mention || !nickname) {
-            await safeSend(api, "❌ Usage: .locknick @mention nickname", threadID);
-            return;
-          }
+          if (mention) nickname = nickname.replace(new RegExp(`@${mention}`), "").trim();
+          if (!mention || !nickname) return safeSend(api, "❌ Usage: .locknick @mention nick", threadID);
           locks.nick[mention] = locks.nick[mention] || {};
-          locks.nick[mention][threadID] = nickname;
-          saveLocks();
+          locks.nick[mention][threadID] = nickname; saveLocks();
           startNickWatcher(mention, threadID, api);
-          try {
-            await api.changeNickname(nickname, threadID, mention);
-          } catch {}
-          await safeSend(api, `🔒 Nick locked for <@${mention}> → ${nickname}`, threadID);
-          return;
+          try { await api.changeNickname(nickname, threadID, mention); } catch {}
+          return safeSend(api, `🔒 Nick locked for <@${mention}> → ${nickname}`, threadID);
         }
         if (cmd === "unlocknick") {
           const mention = Object.keys(mentions || {})[0];
-          if (!mention) {
-            await safeSend(api, "❌ Usage: .unlocknick @mention", threadID);
-            return;
-          }
-          if (locks.nick && locks.nick[mention]) {
-            delete locks.nick[mention][threadID];
-            saveLocks();
-          }
-          stopNickWatcher(mention);
-          await safeSend(api, `🔓 Nick unlocked for <@${mention}>`, threadID);
-          return;
+          if (!mention) return safeSend(api, "❌ Usage: .unlocknick @mention", threadID);
+          if (locks.nick[mention]) delete locks.nick[mention][threadID];
+          saveLocks(); stopNickWatcher(mention);
+          return safeSend(api, `🔓 Nick unlocked for <@${mention}>`, threadID);
         }
+
+        // Target / RKB
         if (cmd === "target") {
-          if (!args[1]) {
-            await safeSend(api, "👤 UID de jisko target karna hai", threadID);
-            return;
-          }
-          targetUID = args[1];
-          await safeSend(api, `Target set ho gaya hai: ${targetUID}`, threadID);
-          return;
+          if (!args[1]) return safeSend(api, "👤 UID de", threadID);
+          targetUID = args[1]; return safeSend(api, `Target set: ${targetUID}`, threadID);
         }
         if (cmd === "cleartarget") {
-          targetUID = null;
-          await safeSend(api, "Target clear ho gaya hai.", threadID);
-          return;
+          targetUID = null; return safeSend(api, "Target cleared", threadID);
         }
         if (cmd === "rkb") {
-          if (!fs.existsSync("np.txt")) {
-            await safeSend(api, "konsa gaLi du rkb ko", threadID);
-            return;
-          }
-          const name = input.trim();
-          const lines = fs.readFileSync("np.txt", "utf8").split("\n").filter(Boolean);
-          stopRequested = false;
-
-          if (rkbInterval) clearInterval(rkbInterval);
+          if (!fs.existsSync("np.txt")) return safeSend(api, "np.txt missing", threadID);
+          const name = input.trim(); const lines = fs.readFileSync("np.txt", "utf8").split("\n").filter(Boolean);
+          stopRequested = false; if (rkbInterval) clearInterval(rkbInterval);
           let index = 0;
-
           rkbInterval = setInterval(async () => {
-            if (index >= lines.length || stopRequested) {
-              clearInterval(rkbInterval);
-              rkbInterval = null;
-              return;
-            }
-            try {
-              await api.sendMessage(`${name} ${lines[index]}`, threadID);
-            } catch {}
+            if (index >= lines.length || stopRequested) { clearInterval(rkbInterval); rkbInterval = null; return; }
+            try { await api.sendMessage(`${name} ${lines[index]}`, threadID); } catch {}
             index++;
-          }, 60000);
-
-          await safeSend(api, `sex hogya bche 🤣rkb ${name}`, threadID);
-          return;
+          }, 6000);
+          return safeSend(api, `🚀 RKB started for ${name}`, threadID);
         }
         if (cmd === "stop") {
           stopRequested = true;
-          if (rkbInterval) {
-            clearInterval(rkbInterval);
-            rkbInterval = null;
-            await safeSend(api, "chud gaye bche🤣", threadID);
-          } else {
-            await safeSend(api, "konsa gaLi du sale ko🤣 rkb tha", threadID);
-          }
-          return;
+          if (rkbInterval) { clearInterval(rkbInterval); rkbInterval = null; return safeSend(api, "🛑 RKB stopped", threadID); }
+          else return safeSend(api, "⚠️ No RKB running", threadID);
         }
+
+        // Sticker spam
         if (cmd.startsWith("sticker")) {
           const sec = parseInt(cmd.replace("sticker", "")) || 2;
-          if (!fs.existsSync("Sticker.txt")) {
-            await safeSend(api, "❌ Sticker.txt missing", threadID);
-            return;
-          }
-          const stickers = fs.readFileSync("Sticker.txt", "utf8").split("\n").map((s) => s.trim()).filter(Boolean);
-          if (!stickers.length) {
-            await safeSend(api, "❌ No stickers in Sticker.txt", threadID);
-            return;
-          }
-          let i = 0;
-          stickerLoopActive = true;
+          if (!fs.existsSync("Sticker.txt")) return safeSend(api, "❌ Sticker.txt missing", threadID);
+          const stickers = fs.readFileSync("Sticker.txt", "utf8").split("\n").map(s => s.trim()).filter(Boolean);
+          if (!stickers.length) return safeSend(api, "❌ No stickers", threadID);
+          let i = 0; stickerLoopActive = true;
           if (stickerInterval) clearInterval(stickerInterval);
           stickerInterval = setInterval(() => {
-            if (!stickerLoopActive) {
-              clearInterval(stickerInterval);
-              stickerInterval = null;
-              return;
-            }
-            api.sendMessage({ sticker: stickers[i] }, threadID).catch(() => {});
-            i = (i + 1) % stickers.length;
+            if (!stickerLoopActive || i >= stickers.length) { clearInterval(stickerInterval); stickerInterval = null; stickerLoopActive = false; return; }
+            try { api.sendMessage({ sticker: stickers[i] }, threadID); } catch {}
+            i++;
           }, sec * 1000);
-          await safeSend(api, `⚡ Sticker spam started every ${sec}s`, threadID);
-          return;
+          return safeSend(api, `📦 Sticker spam started (${sec} sec)`, threadID);
         }
         if (cmd === "stopsticker") {
-          stickerLoopActive = false;
-          if (stickerInterval) {
-            clearInterval(stickerInterval);
-            stickerInterval = null;
-          }
-          await safeSend(api, "🛑 Sticker spam stopped", threadID);
-          return;
-        }
-        if (cmd === "exit") {
-          try {
-            const currentUserID = api.getCurrentUserID ? await api.getCurrentUserID() : null;
-            if (currentUserID) await api.removeUserFromGroup(currentUserID, threadID);
-          } catch {}
-          return;
+          if (stickerInterval) { clearInterval(stickerInterval); stickerInterval = null; stickerLoopActive = false; return safeSend(api, "🛑 Sticker spam stopped", threadID); }
+          else return safeSend(api, "⚠️ No sticker spam running", threadID);
         }
 
-        // target spam auto reply
-        if (targetUID && senderID === targetUID) {
-          handleTargetSpam(api, senderID, threadID, event.messageID);
-        }
-      } catch (ext) {
-        console.error("Listener Error:", ext.stack || ext);
-      }
+        // 🔥 Target spam trigger
+        handleTargetSpam(api, senderID, threadID, event.messageID);
+
+      } catch (e) { console.error("⚠️ Error:", e); }
     });
-
-    // Restart watchers on start for saved locks
-    (async () => {
-      try {
-        Object.keys(locks.emojis).forEach((tid) => startEmojiWatcher(tid, api));
-        Object.keys(locks.dp).forEach((tid) => {
-          if (locks.dp[tid]?.path && fs.existsSync(locks.dp[tid].path)) startDPWatcher(tid, api);
-        });
-        Object.keys(locks.nick).forEach((uid) => {
-          Object.keys(locks.nick[uid]).forEach((tid) => startNickWatcher(uid, tid, api));
-        });
-        Object.keys(locks.groupNames).forEach((tid) => startGroupNameWatcher(tid, api));
-      } catch {}
-    })();
   });
 }
 
