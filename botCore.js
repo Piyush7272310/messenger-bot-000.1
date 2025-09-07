@@ -5,15 +5,12 @@ const request = require("request");
 let rkbInterval = null;
 let stopRequested = false;
 const lockedGroupNames = {};
-const lockedThemes = {};
 const lockedEmojis = {};
 const lockedDPs = {};
 const lockedNicks = {}; // { uid: nickname }
-let mediaLoopInterval = null;
-let lastMedia = null;
-let targetUID = null;
 let stickerInterval = null;
 let stickerLoopActive = false;
+let targetUID = null;
 
 const friendUIDs = fs.existsSync("Friend.txt")
   ? fs.readFileSync("Friend.txt", "utf8").split("\n").map(x => x.trim()).filter(Boolean)
@@ -47,14 +44,6 @@ function startBot(appStatePath, ownerUID) {
           }
         }
 
-        // Theme Lock Revert
-        if (logMessageType === "log:thread-color" && lockedThemes[threadID]) {
-          if (logMessageData?.theme_color !== lockedThemes[threadID]) {
-            await api.changeThreadColor(lockedThemes[threadID], threadID);
-            console.log(`🎨 Theme reverted in ${threadID}`);
-          }
-        }
-
         // Emoji Lock Revert
         if (logMessageType === "log:thread-icon" && lockedEmojis[threadID]) {
           const lockedEmoji = lockedEmojis[threadID];
@@ -64,7 +53,7 @@ function startBot(appStatePath, ownerUID) {
               await api.changeThreadEmoji(lockedEmoji, threadID);
               console.log(`😀 Emoji reverted in ${threadID}`);
             } catch (e) {
-              console.log("⚠️ Emoji revert failed:", e.message);
+              console.log("⚠️ Emoji revert failed error:", e.message);
             }
           }
         }
@@ -124,12 +113,10 @@ function startBot(appStatePath, ownerUID) {
 /help → Ye message
 /gclock [text] → Group name lock
 /unlockgc → Group name unlock
-/locktheme [color] → Theme lock
-/unlocktheme → Theme unlock
 /lockemoji 😀 → Emoji lock
 /unlockemoji → Emoji unlock
 /lockdp → Current group DP lock
-/unlockdp → Group DP unlock
+/unlockdp → DP unlock
 /locknick @mention + nickname → Specific nickname lock
 /unlocknick @mention → Nick lock remove
 /allname [nick] → Sabka nickname change
@@ -156,26 +143,21 @@ function startBot(appStatePath, ownerUID) {
           api.sendMessage("🔓 Group name unlocked!", threadID);
         }
 
-        // ==== Theme Lock ====
-        else if (cmd === "/locktheme") {
-          if (!input) return api.sendMessage("❌ Color code do!", threadID);
-          await api.changeThreadColor(input, threadID);
-          lockedThemes[threadID] = input;
-          api.sendMessage("🎨 Theme locked!", threadID);
-        }
-        else if (cmd === "/unlocktheme") {
-          delete lockedThemes[threadID];
-          api.sendMessage("🎨 Theme unlocked!", threadID);
-        }
-
         // ==== Emoji Lock ====
         else if (cmd === "/lockemoji") {
           if (!input) return api.sendMessage("❌ Emoji do!", threadID);
+
+          // Basic emoji validation using unicode emoji regex
+          if (!/\p{Emoji}/u.test(input)) {
+            return api.sendMessage("❌ Valid emoji do!", threadID);
+          }
+
           lockedEmojis[threadID] = input;
           try {
             await api.changeThreadEmoji(input, threadID);
             api.sendMessage(`😀 Emoji locked → ${input}`, threadID);
-          } catch {
+          } catch (e) {
+            console.log("⚠️ Emoji lock failed:", e.message);
             api.sendMessage("⚠️ Emoji lock fail!", threadID);
           }
         }
@@ -192,10 +174,16 @@ function startBot(appStatePath, ownerUID) {
             if (!dpUrl) return api.sendMessage("❌ Is group me koi DP nahi hai!", threadID);
 
             const filePath = `locked_dp_${threadID}.jpg`;
-            request(dpUrl).pipe(fs.createWriteStream(filePath)).on("close", () => {
-              lockedDPs[threadID] = filePath;
-              api.sendMessage("🖼 Current group DP ab lock ho gayi hai 🔒", threadID);
-            });
+            const fileStream = fs.createWriteStream(filePath);
+            request(dpUrl)
+              .on("error", (e) => {
+                api.sendMessage("⚠️ DP download error!", threadID);
+              })
+              .pipe(fileStream)
+              .on("finish", () => {
+                lockedDPs[threadID] = filePath;
+                api.sendMessage("🖼 Current group DP ab lock ho gayi hai 🔒", threadID);
+              });
           } catch (e) {
             api.sendMessage("⚠️ DP lock error!", threadID);
           }
@@ -262,7 +250,6 @@ function startBot(appStatePath, ownerUID) {
           }, 5000);
           api.sendMessage(`🤬 Start gaali on ${name}`, threadID);
         }
-
         else if (cmd === "/stop") {
           stopRequested = true;
           if (rkbInterval) { clearInterval(rkbInterval); rkbInterval = null; }
@@ -283,7 +270,6 @@ function startBot(appStatePath, ownerUID) {
             i++;
           }, delay * 1000);
         }
-
         else if (cmd === "/stopsticker") {
           if (stickerInterval) { clearInterval(stickerInterval); stickerInterval = null; stickerLoopActive = false; }
         }
