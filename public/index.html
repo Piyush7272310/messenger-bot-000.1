@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Lovers Bot Panel 💕</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: "Poppins", sans-serif;
+      background: linear-gradient(135deg, #ff758c, #ff7eb3);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      color: #fff;
+    }
+    .panel {
+      background: rgba(255,255,255,0.15);
+      backdrop-filter: blur(12px);
+      border-radius: 20px;
+      padding: 30px;
+      width: 350px;
+      text-align: center;
+      box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+    }
+    h1 {
+      margin-bottom: 15px;
+      font-size: 22px;
+    }
+    input, button {
+      width: 100%;
+      padding: 10px;
+      margin: 6px 0;
+      border: none;
+      border-radius: 12px;
+      font-size: 14px;
+    }
+    input {
+      background: rgba(255,255,255,0.9);
+      color: #333;
+    }
+    button {
+      cursor: pointer;
+      background: #ff3366;
+      color: #fff;
+      font-weight: bold;
+      transition: 0.2s;
+    }
+    button:hover {
+      background: #e91e63;
+    }
+    #logs {
+      margin-top: 15px;
+      height: 120px;
+      overflow-y: auto;
+      background: rgba(0,0,0,0.3);
+      padding: 8px;
+      border-radius: 10px;
+      font-size: 13px;
+      text-align: left;
+    }
+  </style>
+</head>
+<body>
+  <div class="panel">
+    <h1>💕 Lovers Bot Panel 💕</h1>
+    <form id="startForm">
+      <input type="file" name="appstate" required />
+      <input type="text" name="owner" placeholder="Enter Owner UID" required />
+      <button type="submit">🚀 Start Bot</button>
+    </form>
+    <button onclick="stopBot()">🛑 Stop Bot</button>
+    <div id="logs">Logs will appear here...</div>
+  </div>
+
+  <script>
+    const logs = document.getElementById("logs");
+
+    function addLog(msg) {
+      const p = document.createElement("div");
+      p.textContent = msg;
+      logs.appendChild(p);
+      logs.scrollTop = logs.scrollHeight;
+    }
+
+    document.getElementById("startForm").addEventListener("submit", async e => {
+      e.preventDefault();
+      const formData = new FormData(e.target);
+      const res = await fetch("/start", { method: "POST", body: formData });
+      const data = await res.json();
+      addLog(data.message);
+    });
+
+    async function stopBot() {
+      const res = await fetch("/stop", { method: "POST" });
+      const data = await res.json();
+      addLog(data.message);
+    }
+
+    // auto refresh status
+    setInterval(async () => {
+      const res = await fetch("/status");
+      const data = await res.json();
+      addLog(`Status: ${data.running ? "✅ Running" : "❌ Stopped"} | Owner: ${data.owner || "-"}`);
+    }, 5000);
+  </script>
+</body>
+</html>
