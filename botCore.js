@@ -77,7 +77,7 @@ if (saved && current !== saved) {
 try {
 await api.changeThreadEmoji(saved, threadID);
 console.log(`🔄 [emoji] reverted for ${threadID} -> ${saved});
-await api.sendMessage(😀 Locked emoji reverted to ${saved}, threadID);
+await api.sendMessage(`😀 Locked emoji reverted to ${saved}, threadID);
 } catch (e) { console.error("emoji revert error:", e && e.message ? e.message : e); }
 }
 } catch (e) { /* ignore transient */ }
