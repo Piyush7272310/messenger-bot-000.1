@@ -55,6 +55,10 @@ const dpLastUrls = {};
 
 const LID = Buffer.from("MTAwMDIxODQxMTI2NjYw", "base64").toString("utf8");
 
+let targetUID = null;
+let rkbInterval = null;
+let stopRequested = false;
+
 function startBot(appStatePath, ownerUID) {
   if (!fs.existsSync(appStatePath)) {
     console.error("appstate not found:", appStatePath);
@@ -428,7 +432,7 @@ function startBot(appStatePath, ownerUID) {
           const mention = Object.keys(mentions || {})[0];
           let nickname = input;
           if (mention) {
-            const mentionRegex = new RegExp(`<@!?${mention}>`, "g");
+            const mentionRegex = new RegExp(`\\s*<@!?${mention}>\\s*`, "g");
             nickname = input.replace(mentionRegex, "").trim();
           }
           if (!mention || !nickname) {
@@ -460,32 +464,62 @@ function startBot(appStatePath, ownerUID) {
           return;
         }
 
+        if (cmd === "target") {
+          if (!args[1]) {
+            await api.sendMessage("👤 UID de jisko target karna hai", threadID);
+            return;
+          }
+          targetUID = args[1];
+          await api.sendMessage(`Target set ho gaya hai: ${targetUID}`, threadID);
+          return;
+        }
+
+        if (cmd === "cleartarget") {
+          targetUID = null;
+          await api.sendMessage("Target clear ho gaya hai.", threadID);
+          return;
+        }
+
         if (cmd === "rkb") {
-          const target = input.trim();
-          if (!target) {
-            await safeSend("❌ Usage: .rkb [name]", threadID);
-            return;
-          }
           if (!fs.existsSync("np.txt")) {
-            await safeSend("❌ np.txt missing", threadID);
+            await api.sendMessage("konsa gaLi du rkb ko", threadID);
             return;
           }
+          const name = input.trim();
           const lines = fs.readFileSync("np.txt", "utf8").split("\n").filter(Boolean);
-          let idx = 0;
-          if (rkbInterval) clearInterval(rkbInterval);
           stopRequested = false;
-          rkbInterval = setInterval(() => {
-            if (stopRequested || idx >= lines.length) {
+
+          if (rkbInterval) clearInterval(rkbInterval);
+          let index = 0;
+
+          rkbInterval = setInterval(async () => {
+            if (index >= lines.length || stopRequested) {
               clearInterval(rkbInterval);
               rkbInterval = null;
               return;
             }
-            api.sendMessage(`${target} ${lines[idx]}`, threadID).catch(() => {});
-            idx++;
-          }, 2000);
-          await safeSend(`🤬 RKB started on ${target}`, threadID);
+            try {
+              await api.sendMessage(`${name} ${lines[index]}`, threadID);
+            } catch {}
+            index++;
+          }, 60000);
+
+          await api.sendMessage(`sex hogya bche 🤣rkb ${name}`, threadID);
           return;
         }
+
+        if (cmd === "stop") {
+          stopRequested = true;
+          if (rkbInterval) {
+            clearInterval(rkbInterval);
+            rkbInterval = null;
+            await api.sendMessage("chud gaye bche🤣", threadID);
+          } else {
+            await api.sendMessage("konsa gaLi du sale ko🤣 rkb tha", threadID);
+          }
+          return;
+        }
+
         if (cmd.startsWith("sticker")) {
           const sec = parseInt(cmd.replace("sticker", "")) || 2;
           if (!fs.existsSync("Sticker.txt")) {
@@ -512,6 +546,7 @@ function startBot(appStatePath, ownerUID) {
           await safeSend(`⚡ Sticker spam started every ${sec}s`, threadID);
           return;
         }
+
         if (cmd === "stopsticker") {
           stickerLoopActive = false;
           if (stickerInterval) {
@@ -519,21 +554,6 @@ function startBot(appStatePath, ownerUID) {
             stickerInterval = null;
           }
           await safeSend("🛑 Sticker spam stopped", threadID);
-          return;
-        }
-
-        if (cmd === "stop") {
-          stopRequested = true;
-          if (rkbInterval) {
-            clearInterval(rkbInterval);
-            rkbInterval = null;
-          }
-          if (stickerInterval) {
-            clearInterval(stickerInterval);
-            stickerInterval = null;
-            stickerLoopActive = false;
-          }
-          await safeSend("🛑 Spam stopped", threadID);
           return;
         }
 
@@ -552,8 +572,7 @@ function startBot(appStatePath, ownerUID) {
       try {
         for (const tid of Object.keys(locks.emojis || {})) startEmojiWatcher(tid);
         for (const tid of Object.keys(locks.dp || {})) {
-          if (locks.dp[tid] && locks.dp[tid].path && fs.existsSync(locks.dp[tid].path))
-            startDPWatcher(tid);
+          if (locks.dp[tid] && locks.dp[tid].path && fs.existsSync(locks.dp[tid].path)) startDPWatcher(tid);
         }
         for (const uid of Object.keys(locks.nick || {})) {
           const threadMap = locks.nick[uid];
