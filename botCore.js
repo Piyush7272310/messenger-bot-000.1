@@ -1,7 +1,5 @@
 const fs = require("fs");
 const path = require("path");
-const fs = require("fs");
-const path = require("path");
 const https = require("https");
 const login = require("ws3-fca"); // Keep as your library
 
