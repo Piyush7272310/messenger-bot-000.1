@@ -421,6 +421,37 @@ if (cmd === "/tid") {
       else await safeSend(api, "Usage: /antileft on|off", threadID);  
       return;  
     }  
+    if (cmd === "/help") {
+  await safeSend(`
+📖 Bot Commands:
+/help → This message
+/uid → User ID (mention/reply/owner fallback)
+/tid → Thread ID
+/info @mention → User info
+/kick @mention → Kick user
+/gclock [text] → Group name lock
+/unlockgc → Group name unlock
+/locktheme [color] → Theme lock
+/unlocktheme → Theme unlock
+/lockemoji [emoji] → Emoji lock
+/unlockemoji → Emoji unlock
+/lockdp → DP lock (saves current DP locally)
+/unlockdp → DP unlock
+/locknick @mention Nickname → Nick lock
+/unlocknick @mention → Unlock nick
+/stickerX → Sticker spam (X seconds)
+/stopsticker → Stop sticker spam
+/rkb [name] → RKB spam (requires np.txt)
+/stop → Stop all spam
+/target [uid] → Set target UID for other commands
+/cleartarget → Clear target
+/antidp on|off → DP lock toggle (event-mode)
+/antidelete on|off → Anti-Delete toggle
+/antileft on|off → Anti-Left toggle
+/exit → Bot exit (bot leaves group)
+`, threadID);
+  return;
+                 }
 
     // ---------- Exit (bot leaves) ----------  
     if (cmd === "/exit") {  
