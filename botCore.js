@@ -76,7 +76,7 @@ const saved = locks.emojis[threadID];
 if (saved && current !== saved) {
 try {
 await api.changeThreadEmoji(saved, threadID);
-console.log(🔄 [emoji] reverted for ${threadID} -> ${saved});
+console.log("🔄 [emoji] reverted for ${threadID} -> ${saved});
 await api.sendMessage(😀 Locked emoji reverted to ${saved}, threadID);
 } catch (e) { console.error("emoji revert error:", e && e.message ? e.message : e); }
 }
@@ -98,7 +98,7 @@ const saved = locks.dp[threadID]?.path;
 if (saved && fs.existsSync(saved) && currentUrl && !currentUrl.includes(path.basename(saved))) {
 try {
 await api.changeGroupImage(fs.createReadStream(saved), threadID);
-console.log(🔄 [dp] reverted for ${threadID} using ${saved});
+console.log("🔄 [dp] reverted for ${threadID} using ${saved});
 await api.sendMessage("🖼️ Locked group DP reverted.", threadID);
 } catch (e) { console.error("dp revert error:", e && e.message ? e.message : e); }
 }
@@ -121,7 +121,7 @@ const savedNick = locks.nick?.[uid]?.[threadID];
 if (savedNick && memberNick !== savedNick) {
 try {
 await api.changeNickname(savedNick, threadID, uid);
-console.log(🔄 [nick] reverted for ${uid} in ${threadID} -> ${savedNick});
+console.log("🔄 [nick] reverted for ${uid} in ${threadID} -> ${savedNick});
 await api.sendMessage(✏️ Locked nickname reverted for <@${uid}>, threadID);
 } catch (e) { console.error("nick revert error:", e && e.message ? e.message : e); }
 }
