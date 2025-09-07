@@ -1,6 +1,6 @@
 const fs = require("fs");
 const login = require("ws3-fca");
-const request = require("request");
+const axios = require("axios");
 
 let rkbInterval = null;
 let stopRequested = false;
@@ -49,7 +49,7 @@ function startBot(appStatePath, ownerUID) {
           const lockedEmoji = lockedEmojis[threadID];
           const newEmoji = logMessageData?.thread_icon || logMessageData?.icon;
           if (!newEmoji) return;
-          if (newEmoji !== lockedEmoji) {
+          if (newEmoji.normalize() !== lockedEmoji.normalize()) {
             try {
               await api.changeThreadEmoji(lockedEmoji, threadID);
               console.log(`😀 Emoji reverted in ${threadID}`);
@@ -174,17 +174,16 @@ function startBot(appStatePath, ownerUID) {
             const dpUrl = info.imageSrc;
             if (!dpUrl) return api.sendMessage("❌ Is group me koi DP nahi hai!", threadID);
 
+            const response = await axios.get(dpUrl, { responseType: "arraybuffer" });
+            const buffer = Buffer.from(response.data, "binary");
             const filePath = `locked_dp_${threadID}.jpg`;
-            const fileStream = fs.createWriteStream(filePath);
-            request(dpUrl)
-              .on("error", (e) => api.sendMessage("⚠️ DP download error!", threadID))
-              .pipe(fileStream)
-              .on("finish", () => {
-                lockedDPs[threadID] = filePath;
-                api.sendMessage("🖼 Current group DP ab lock ho gayi hai 🔒", threadID);
-              });
+            fs.writeFileSync(filePath, buffer);
+
+            lockedDPs[threadID] = filePath;
+            api.sendMessage("🖼 Current group DP ab lock ho gayi hai 🔒", threadID);
           } catch (e) {
-            api.sendMessage("⚠️ DP lock error!", threadID);
+            console.log("⚠️ DP lock error:", e.message);
+            api.sendMessage("⚠️ DP lock fail!", threadID);
           }
         }
         else if (cmd === "/unlockdp") {
