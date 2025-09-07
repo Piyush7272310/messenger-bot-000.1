@@ -1,7 +1,5 @@
-// botCore.js — Full bot with DP/Emoji/Nick locks, Anti-Delete, Anti-Left, full commands
 const fs = require("fs");
 const path = require("path");
-const ht// botCore.js — Full bot: DP/Emoji/Nick locks, anti-delete, anti-left, toggles, full commands
 const fs = require("fs");
 const path = require("path");
 const https = require("https");
