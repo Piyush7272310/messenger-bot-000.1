@@ -263,23 +263,7 @@ function startBot(appStatePath, ownerUID) {
           if (stickerInterval) { clearInterval(stickerInterval); stickerInterval = null; stickerLoopActive = false; }
         }
 
-        // ==== Target ====
-        else if (cmd === "/target") {
-          targetUID = input.trim();
-          api.sendMessage(`🎯 Target set: ${targetUID}`, threadID);
-        }
-        else if (cmd === "/cleartarget") {
-          targetUID = null;
-          api.sendMessage("🎯 Target cleared!", threadID);
-        }
-
-      } catch (e) { console.error("⚠️ Error:", e.message); }
-    });
-  });
-}
-
-module.exports = { startBot };
-let targetUID = null;  // टारगेट यूजर को स्टोर करने के लिए
+        let targetUID = null;  // टारगेट यूजर को स्टोर करने के लिए
 
 // api.listenMqtt के अंदर
 
@@ -328,3 +312,5 @@ api.listenMqtt(async (err, event) => {
     console.error("Error:", e.message);
   }
 });
+
+module.exports = { startBot };
