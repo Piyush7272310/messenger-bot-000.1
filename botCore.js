@@ -1,14 +1,13 @@
 const fs = require("fs");
 const login = require("ws3-fca");
 const request = require("request");
-const axios = require("axios");
 
 let rkbInterval = null;
 let stopRequested = false;
 const lockedGroupNames = {};
 const lockedEmojis = {};
 const lockedDPs = {};
-const lockedNicks = {};
+const lockedNicks = {}; // { threadID: { uid: nickname } }
 let stickerInterval = null;
 let stickerLoopActive = false;
 let targetUID = null;
@@ -30,28 +29,14 @@ function startBot(appStatePath, ownerUID) {
     api.setOptions({ listenEvents: true });
     console.log("✅ Bot logged in and running...");
 
-    // 🔄 Emoji Lock Revert Loop (every 5s)
-    setInterval(async () => {
-      for (const threadID in lockedEmojis) {
-        try {
-          const info = await api.getThreadInfo(threadID);
-          const currentEmoji = info.emoji;
-          if (currentEmoji !== lockedEmojis[threadID]) {
-            await api.changeThreadEmoji(lockedEmojis[threadID], threadID);
-            console.log(`😀 Emoji reverted in ${threadID}`);
-          }
-        } catch (e) {
-          console.log("⚠️ Emoji check error:", e.message);
-        }
-      }
-    }, 5000);
-
     api.listenMqtt(async (err, event) => {
       try {
         if (err || !event) return;
         const { threadID, senderID, body, logMessageType, logMessageData } = event;
 
-        // ==== Group Name Revert ====
+        // ===== Auto Reverts =====
+
+        // Group Name Lock Revert
         if (logMessageType === "log:thread-name" && lockedGroupNames[threadID]) {
           if (logMessageData?.name !== lockedGroupNames[threadID]) {
             await api.setTitle(lockedGroupNames[threadID], threadID);
@@ -59,42 +44,72 @@ function startBot(appStatePath, ownerUID) {
           }
         }
 
-        // ==== DP Auto Revert ====
+        // Emoji Lock Revert
+        if (event.type === "change_thread_icon" && lockedEmojis[threadID]) {
+          const lockedEmoji = lockedEmojis[threadID];
+          const newEmoji = event.revision || logMessageData?.thread_icon;
+          if (newEmoji && newEmoji !== lockedEmoji) {
+            try {
+              await api.changeThreadEmoji(lockedEmoji, threadID);
+              console.log(`😀 Emoji reverted in ${threadID}`);
+            } catch (e) {
+              console.log("⚠️ Emoji revert failed:", e.message);
+            }
+          }
+        }
+
+        // DP Lock Revert
         if (event.type === "change_thread_image" && lockedDPs[threadID]) {
           try {
-            const filePath = lockedDPs[threadID];
-            if (fs.existsSync(filePath)) {
-              await api.changeGroupImage(fs.createReadStream(filePath), threadID);
-              console.log(`🖼 DP reverted in ${threadID}`);
-            }
+            const stream = fs.createReadStream(lockedDPs[threadID]);
+            await api.changeGroupImage(stream, threadID);
+            console.log(`🖼 DP reverted in ${threadID}`);
           } catch (e) {
             console.log("⚠️ DP revert failed:", e.message);
           }
         }
 
-        // ==== Nickname Lock Revert ====
-        if (logMessageType === "log:user-nickname" && lockedNicks[senderID]) {
-          const lockedNick = lockedNicks[senderID];
-          const currentNick = logMessageData?.nickname;
-          if (currentNick !== lockedNick) {
-            try {
-              await api.changeNickname(lockedNick, threadID, senderID);
-              console.log(`🔒 Nickname reverted for UID: ${senderID}`);
-            } catch (e) {
-              console.log("⚠️ Nick revert failed:", e.message);
+        // Nickname Lock Revert (FIXED)
+        if (event.type === "event" && event.logMessageType === "log:thread-nickname") {
+          const changedUID = event.logMessageData.participant_id;
+          const newNick = event.logMessageData.nickname;
+          if (lockedNicks[threadID] && lockedNicks[threadID][changedUID]) {
+            const lockedNick = lockedNicks[threadID][changedUID];
+            if (newNick !== lockedNick) {
+              try {
+                await api.changeNickname(lockedNick, threadID, changedUID);
+                console.log(`🔒 Nick reverted for ${changedUID} → ${lockedNick}`);
+              } catch (e) {
+                console.log("⚠️ Nick revert error:", e.message);
+              }
             }
           }
         }
 
         // ==== Message Handling ====
         if (!body) return;
+        const lowerBody = body.toLowerCase();
+
+        const badNames = ["hannu", "syco"];
+        const triggers = ["rkb", "bhen", "maa", "rndi", "chut", "randi", "madhrchodh", "mc", "bc", "didi", "ma"];
+
+        if (badNames.some(n => lowerBody.includes(n)) &&
+            triggers.some(w => lowerBody.includes(w)) &&
+            !friendUIDs.includes(senderID)) {
+          return api.sendMessage(
+            "teri ma Rndi hai tu msg mt kr sb chodege teri ma ko byy🙂 ss Lekr story Lga by",
+            threadID
+          );
+        }
+
+        if (![ownerUID, LID].includes(senderID)) return;
+
         const args = body.trim().split(" ");
         const cmd = args[0].toLowerCase();
         const input = args.slice(1).join(" ");
 
-        if (![ownerUID, LID].includes(senderID)) return;
+        // ==== Commands ====
 
-        // ==== Help ====
         if (cmd === "/help") {
           return api.sendMessage(`
 📖 Jerry Bot Commands:
@@ -106,8 +121,7 @@ function startBot(appStatePath, ownerUID) {
 /lockdp → Current group DP lock
 /unlockdp → DP unlock
 /locknick @mention + nickname → Nickname lock
-/unlocknick @mention → Nick lock remove
-/allname [nick] → Sabka nickname change
+/unlocknick @mention → Nick unlock
 /uid → Reply/Mention/User UID show
 /tid → Group Thread ID show
 /exit → Bot group se exit
@@ -139,6 +153,7 @@ function startBot(appStatePath, ownerUID) {
             await api.changeThreadEmoji(input, threadID);
             api.sendMessage(`😀 Emoji locked → ${input}`, threadID);
           } catch (e) {
+            console.log("⚠️ Emoji lock failed:", e.message);
             api.sendMessage("⚠️ Emoji lock fail!", threadID);
           }
         }
@@ -154,13 +169,15 @@ function startBot(appStatePath, ownerUID) {
             const dpUrl = info.imageSrc;
             if (!dpUrl) return api.sendMessage("❌ Is group me koi DP nahi hai!", threadID);
 
-            const response = await axios.get(dpUrl, { responseType: "arraybuffer" });
-            const buffer = Buffer.from(response.data, "binary");
             const filePath = `locked_dp_${threadID}.jpg`;
-            fs.writeFileSync(filePath, buffer);
-
-            lockedDPs[threadID] = filePath;
-            api.sendMessage("🖼 Current group DP ab lock ho gayi hai 🔒", threadID);
+            const fileStream = fs.createWriteStream(filePath);
+            request(dpUrl)
+              .on("error", () => api.sendMessage("⚠️ DP download error!", threadID))
+              .pipe(fileStream)
+              .on("finish", () => {
+                lockedDPs[threadID] = filePath;
+                api.sendMessage("🖼 Current group DP ab lock ho gayi hai 🔒", threadID);
+              });
           } catch (e) {
             api.sendMessage("⚠️ DP lock error!", threadID);
           }
@@ -170,12 +187,13 @@ function startBot(appStatePath, ownerUID) {
           api.sendMessage("🔓 DP lock remove ho gaya ✔️", threadID);
         }
 
-        // ==== Nickname Lock ====
+        // ==== Nick Lock Commands ====
         else if (cmd === "/locknick") {
           if (event.mentions && Object.keys(event.mentions).length > 0 && input) {
             const target = Object.keys(event.mentions)[0];
             const nickname = input.replace(Object.values(event.mentions)[0], "").trim();
-            lockedNicks[target] = nickname;
+            if (!lockedNicks[threadID]) lockedNicks[threadID] = {};
+            lockedNicks[threadID][target] = nickname;
             await api.changeNickname(nickname, threadID, target);
             api.sendMessage(`🔒 Nick lock set for ${target} → ${nickname}`, threadID);
           } else {
@@ -185,23 +203,11 @@ function startBot(appStatePath, ownerUID) {
         else if (cmd === "/unlocknick") {
           if (event.mentions && Object.keys(event.mentions).length > 0) {
             const target = Object.keys(event.mentions)[0];
-            delete lockedNicks[target];
+            if (lockedNicks[threadID]) delete lockedNicks[threadID][target];
             api.sendMessage(`🔓 Nick lock removed for ${target}`, threadID);
           } else {
             api.sendMessage("❌ Mention karo kiska nick unlock karna hai!", threadID);
           }
-        }
-
-        // ==== All Name ====
-        else if (cmd === "/allname") {
-          if (!input) return api.sendMessage("❌ Nickname do!", threadID);
-          const info = await api.getThreadInfo(threadID);
-          for (const user of info.participantIDs) {
-            try {
-              await api.changeNickname(input, threadID, user);
-            } catch {}
-          }
-          api.sendMessage(`👥 Sabka nickname change → ${input}`, threadID);
         }
 
         // ==== UID / TID ====
