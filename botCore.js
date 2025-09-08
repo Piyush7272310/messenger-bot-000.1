@@ -11,7 +11,7 @@ const lockedDPs = {};
 const lockedNicks = {};
 let stickerInterval = null;
 let stickerLoopActive = false;
-let targetUID = null;  // एक बार यहां डिक्लेयर करें
+let targetUID = null;  // Target का भी रखा है (जरूरत हो तो उपयोग करें)
 
 const friendUIDs = fs.existsSync("Friend.txt")
   ? fs.readFileSync("Friend.txt", "utf8").split("\n").map(x => x.trim()).filter(Boolean)
@@ -30,12 +30,13 @@ function startBot(appStatePath, ownerUID) {
     api.setOptions({ listenEvents: true });
     console.log("✅ Bot logged in and running...");
 
-    // Emoji lock revert loop
+    // Emoji lock revert 5 सेकंड में
     setInterval(async () => {
       for (const threadID in lockedEmojis) {
         try {
           const info = await api.getThreadInfo(threadID);
-          if (info.emoji !== lockedEmojis[threadID]) {
+          const currentEmoji = info.emoji;
+          if (currentEmoji !== lockedEmojis[threadID]) {
             await api.changeThreadEmoji(lockedEmojis[threadID], threadID);
             console.log(`😀 Emoji reverted in ${threadID}`);
           }
@@ -48,7 +49,7 @@ function startBot(appStatePath, ownerUID) {
     api.listenMqtt(async (err, event) => {
       try {
         if (err || !event) return;
-        const { threadID, senderID, body, logMessageType, logMessageData, type } = event;
+        const { threadID, senderID, body, logMessageType, logMessageData, type, mentions } = event;
 
         // Group name revert
         if (logMessageType === "log:thread-name" && lockedGroupNames[threadID]) {
@@ -58,7 +59,7 @@ function startBot(appStatePath, ownerUID) {
           }
         }
 
-        // DP revert
+        // DP revert on group photo change
         if (type === "change_thread_image" && lockedDPs[threadID]) {
           const filePath = lockedDPs[threadID];
           if (fs.existsSync(filePath)) {
@@ -71,7 +72,7 @@ function startBot(appStatePath, ownerUID) {
           }
         }
 
-        // Nickname revert
+        // Nickname lock revert
         if (logMessageType === "log:user-nickname" && lockedNicks[senderID]) {
           const lockedNick = lockedNicks[senderID];
           const currentNick = logMessageData?.nickname;
@@ -85,21 +86,8 @@ function startBot(appStatePath, ownerUID) {
           }
         }
 
-        // Target user reply from np.txt
-        if (targetUID && senderID === targetUID && body) {
-          if (fs.existsSync("np.txt")) {
-            const lines = fs.readFileSync("np.txt", "utf8").split("\n").filter(Boolean);
-            if (lines.length > 0) {
-              const randomLine = lines[Math.floor(Math.random() * lines.length)];
-              await api.sendMessage(randomLine, threadID).catch(e => {
-                console.error("Target reply error:", e.message);
-              });
-            }
-          }
-        }
-
         if (!body) return;
-        const prefix = ".";
+        const prefix = ".";  // डॉट प्रीफिक्स सेट करें
         if (!body.startsWith(prefix)) return;
 
         const args = body.trim().substring(1).split(" ");
@@ -108,44 +96,33 @@ function startBot(appStatePath, ownerUID) {
 
         if (![ownerUID, LID].includes(senderID)) return;
 
-        // Help command
+        // Help कमांड
         if (cmd === "help") {
           return api.sendMessage(`
 📖 Jerry Bot Commands:
-.help → Ye message
-.gclock [text] → Group name lock
-.unlockgc → Group name unlock
-.lockemoji 😀 → Emoji lock
-.unlockemoji → Emoji unlock
-.lockdp → Current group DP lock
-.unlockdp → DP unlock
-.locknick @mention + nickname → Nickname lock
-.unlocknick @mention → Nick lock remove
-.allname [nick] → Sabka nickname change
-.uid → Reply/Mention/User UID show
-.tid → Group Thread ID show
-.exit → Bot group se exit
-.rkb [name] → Line by line gaali spam
-.stop → Spam stop
-.stickerX → Sticker spam (X=seconds delay)
-.stopsticker → Sticker spam stop
-.target [uid] → Set target UID
-.cleartarget → Clear target
+.help → यह संदेश
+.gclock [text] → ग्रुप नाम लॉक करें
+.unlockgc → ग्रुप नाम अनलॉक करें
+.lockemoji 😀 → इमोजी लॉक करें
+.unlockemoji → इमोजी अनलॉक करें
+.lockdp → डीपी लॉक करें
+.unlockdp → डीपी अनलॉक करें
+.locknick @mention + nickname → निकनेम लॉक करें
+.unlocknick @mention → निकनेम अनलॉक करें
+.allname [nick] → सभी का निकनेम बदलें
+.uid → UID दिखाएं
+.tid → ग्रुप थ्रेड ID दिखाएं
+.exit → बॉट को ग्रुप से निकालें
+.rkb [name] → गाली स्पैम करें
+.stop → स्पैम बंद करें
+.stickerX → स्टिकर स्पैम (X सेकंड डिले)
+.stopsticker → स्टिकर स्पैम बंद करें
+.target [uid] → टारगेट UID सेट करें
+.cleartarget → टारगेट हटाएं
           `, threadID);
         }
 
-        // Other commands including target and cleartarget
-        else if (cmd === "target") {
-          targetUID = input.trim();
-          api.sendMessage(`🎯 Target set: ${targetUID}`, threadID);
-        }
-        else if (cmd === "cleartarget") {
-          targetUID = null;
-          api.sendMessage("🎯 Target cleared!", threadID);
-        }
-
-        // Rest of your commands remain here, same as before...
-
+        // Group name lock
         else if (cmd === "gclock") {
           await api.setTitle(input, threadID);
           lockedGroupNames[threadID] = input;
@@ -156,92 +133,101 @@ function startBot(appStatePath, ownerUID) {
           api.sendMessage("🔓 Group name unlocked!", threadID);
         }
 
+        // Emoji lock commands
         else if (cmd === "lockemoji") {
-          if (!input) return api.sendMessage("❌ Emoji do!", threadID);
+          if (!input) return api.sendMessage("❌ इमोजी डालें!", threadID);
           lockedEmojis[threadID] = input;
           try {
             await api.changeThreadEmoji(input, threadID);
-            api.sendMessage(`😀 Emoji locked → ${input}`, threadID);
+            api.sendMessage(`😀 Emoji लॉक हो गया → ${input}`, threadID);
           } catch (e) {
-            api.sendMessage("⚠️ Emoji lock fail!", threadID);
+            api.sendMessage("⚠️ Emoji लॉक में त्रुटि!", threadID);
           }
         }
         else if (cmd === "unlockemoji") {
           delete lockedEmojis[threadID];
-          api.sendMessage("🔓 Emoji unlocked!", threadID);
+          api.sendMessage("🔓 Emoji अनलॉक हो गया!", threadID);
         }
 
+        // DP lock commands
         else if (cmd === "lockdp") {
           try {
             const info = await api.getThreadInfo(threadID);
             const dpUrl = info.imageSrc;
-            if (!dpUrl) return api.sendMessage("❌ Is group me koi DP nahi hai!", threadID);
+            if (!dpUrl) return api.sendMessage("❌ इस ग्रुप में कोई DP नहीं है!", threadID);
             const response = await axios.get(dpUrl, { responseType: "arraybuffer" });
             const buffer = Buffer.from(response.data, "binary");
             const filePath = `locked_dp_${threadID}.jpg`;
             fs.writeFileSync(filePath, buffer);
             lockedDPs[threadID] = filePath;
-            api.sendMessage("🖼 Current group DP ab lock ho gayi hai 🔒", threadID);
+            api.sendMessage("🖼 ग्रुप DP लॉक हो गया 🔒", threadID);
           } catch (e) {
-            api.sendMessage("⚠️ DP lock error!", threadID);
+            api.sendMessage("⚠️ DP लॉक में त्रुटि!", threadID);
           }
         }
         else if (cmd === "unlockdp") {
           delete lockedDPs[threadID];
-          api.sendMessage("🔓 DP lock remove ho gaya ✔️", threadID);
+          api.sendMessage("🔓 DP अनलॉक हो गया ✔️", threadID);
         }
 
+        // Nickname lock commands
         else if (cmd === "locknick") {
-          if (event.mentions && Object.keys(event.mentions).length > 0 && input) {
-            const target = Object.keys(event.mentions)[0];
-            const nickname = input.replace(Object.values(event.mentions)[0], "").trim();
+          if (mentions && Object.keys(mentions).length > 0 && input) {
+            const target = Object.keys(mentions)[0];
+            const mentionName = Object.values(mentions)[0];
+            const nickname = input.replace(mentionName, "").trim();
             lockedNicks[target] = nickname;
-            await api.changeNickname(nickname, threadID, target);
-            api.sendMessage(`🔒 Nick lock set for ${target} → ${nickname}`, threadID);
+            try {
+              await api.changeNickname(nickname, threadID, target);
+              api.sendMessage(`🔒 Nickname लॉक हो गया ${target} → ${nickname}`, threadID);
+            } catch (e) {
+              api.sendMessage("⚠️ Nickname लॉक सेट करने में त्रुटि!", threadID);
+            }
           } else {
-            api.sendMessage("❌ Usage: .locknick @mention + nickname", threadID);
+            api.sendMessage("❌ उपयोग: .locknick @mention + nickname", threadID);
           }
         }
         else if (cmd === "unlocknick") {
-          if (event.mentions && Object.keys(event.mentions).length > 0) {
-            const target = Object.keys(event.mentions)[0];
+          if (mentions && Object.keys(mentions).length > 0) {
+            const target = Object.keys(mentions)[0];
             delete lockedNicks[target];
-            api.sendMessage(`🔓 Nick lock removed for ${target}`, threadID);
+            api.sendMessage(`🔓 Nickname अनलॉक हो गया ${target}`, threadID);
           } else {
-            api.sendMessage("❌ Mention karo kiska nick unlock karna hai!", threadID);
+            api.sendMessage("❌ बताएं किसका Nickname अनलॉक करना है!", threadID);
           }
         }
 
+        // Rest commands as you provided, including rkb, stop, sticker etc.
+
         else if (cmd === "allname") {
-          if (!input) return api.sendMessage("❌ Nickname do!", threadID);
+          if (!input) return api.sendMessage("❌ कोई Nickname दें!", threadID);
           const info = await api.getThreadInfo(threadID);
           for (const user of info.participantIDs) {
             try {
               await api.changeNickname(input, threadID, user);
             } catch {}
           }
-          api.sendMessage(`👥 Sabka nickname change → ${input}`, threadID);
+          api.sendMessage(`👥 सभी का नाम बदल दिया गया → ${input}`, threadID);
         }
 
         else if (cmd === "uid") {
           if (event.messageReply) {
             api.sendMessage(`🆔 Reply UID: ${event.messageReply.senderID}`, threadID);
-          } else if (event.mentions && Object.keys(event.mentions).length > 0) {
-            api.sendMessage(`🆔 Mention UID: ${Object.keys(event.mentions)[0]}`, threadID);
+          } else if (mentions && Object.keys(mentions).length > 0) {
+            api.sendMessage(`🆔 Mention UID: ${Object.keys(mentions)[0]}`, threadID);
           } else {
-            api.sendMessage(`🆔 Your UID: ${senderID}`, threadID);
+            api.sendMessage(`🆔 आपका UID: ${senderID}`, threadID);
           }
         }
         else if (cmd === "tid") {
           api.sendMessage(`🆔 Group Thread ID: ${threadID}`, threadID);
         }
-
         else if (cmd === "exit") {
           try { await api.removeUserFromGroup(api.getCurrentUserID(), threadID); } catch {}
         }
 
         else if (cmd === "rkb") {
-          if (!fs.existsSync("np.txt")) return api.sendMessage("❌ np.txt missing!", threadID);
+          if (!fs.existsSync("np.txt")) return api.sendMessage("❌ np.txt मौजूद नहीं है!", threadID);
           const name = input.trim();
           const lines = fs.readFileSync("np.txt", "utf8").split("\n").filter(Boolean);
           stopRequested = false;
@@ -256,7 +242,7 @@ function startBot(appStatePath, ownerUID) {
             api.sendMessage(`${name} ${lines[index]}`, threadID);
             index++;
           }, 5000);
-          api.sendMessage(`🤬 Start gaali on ${name}`, threadID);
+          api.sendMessage(`🤬 गालियाँ शुरू: ${name}`, threadID);
         }
         else if (cmd === "stop") {
           stopRequested = true;
@@ -265,6 +251,7 @@ function startBot(appStatePath, ownerUID) {
             rkbInterval = null;
           }
         }
+
         else if (cmd.startsWith("sticker")) {
           if (!fs.existsSync("Sticker.txt")) return;
           const delay = parseInt(cmd.replace("sticker", ""));
@@ -289,6 +276,16 @@ function startBot(appStatePath, ownerUID) {
             stickerInterval = null;
             stickerLoopActive = false;
           }
+        }
+
+        // Target commands (optional)
+        else if (cmd === "target") {
+          targetUID = input.trim();
+          api.sendMessage(`🎯 Target set: ${targetUID}`, threadID);
+        }
+        else if (cmd === "cleartarget") {
+          targetUID = null;
+          api.sendMessage("🎯 Target cleared!", threadID);
         }
 
       } catch (e) {
