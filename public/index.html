@@ -5,33 +5,88 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Lovers Bot Panel 💕</title>
   <style>
+    /* Background slideshow */
     body {
       margin: 0;
       font-family: "Poppins", sans-serif;
-      background: linear-gradient(135deg, #ff758c, #ff7eb3);
-      display: flex;
-      justify-content: center;
-      align-items: center;
       height: 100vh;
-      color: #fff;
+      overflow: hidden;
     }
+    .bg-slideshow {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      z-index: -1;
+    }
+    .bg-slideshow img {
+      position: absolute;
+      width: 100%; height: 100%;
+      object-fit: cover;
+      opacity: 0;
+      transition: opacity 2s ease-in-out;
+    }
+    .bg-slideshow img.active {
+      opacity: 1;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      position: fixed;
+      left: 0; top: 0;
+      width: 220px;
+      height: 100%;
+      background: rgba(255,255,255,0.1);
+      backdrop-filter: blur(15px);
+      border-right: 2px solid rgba(255,255,255,0.2);
+      color: #fff;
+      padding: 20px;
+      overflow-y: auto;
+    }
+    .sidebar h2 {
+      font-size: 18px;
+      margin-bottom: 10px;
+      text-align: center;
+    }
+    .command {
+      margin: 8px 0;
+      padding: 8px;
+      border-radius: 10px;
+      background: rgba(255,255,255,0.08);
+      transition: 0.3s;
+      font-size: 14px;
+    }
+    .command:hover {
+      background: rgba(255,255,255,0.2);
+      transform: scale(1.05);
+    }
+
+    /* Main panel */
     .panel {
+      margin-left: 240px;
+      margin-top: 50px;
+      max-width: 400px;
       background: rgba(255,255,255,0.15);
-      backdrop-filter: blur(12px);
+      backdrop-filter: blur(15px);
       border-radius: 20px;
       padding: 30px;
-      width: 350px;
+      box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+      color: #fff;
       text-align: center;
-      box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+      animation: fadeInUp 1s ease;
     }
+    @keyframes fadeInUp {
+      from {opacity:0; transform: translateY(40px);}
+      to {opacity:1; transform: translateY(0);}
+    }
+
     h1 {
-      margin-bottom: 15px;
-      font-size: 22px;
+      margin-bottom: 20px;
+      font-size: 24px;
     }
     input, button {
       width: 100%;
-      padding: 10px;
-      margin: 6px 0;
+      padding: 12px;
+      margin: 8px 0;
       border: none;
       border-radius: 12px;
       font-size: 14px;
@@ -42,27 +97,100 @@
     }
     button {
       cursor: pointer;
-      background: #ff3366;
+      background: linear-gradient(135deg, #ff3366, #ff7eb3);
       color: #fff;
       font-weight: bold;
-      transition: 0.2s;
+      transition: 0.3s;
+      box-shadow: 0 0 10px rgba(255,51,102,0.7);
     }
     button:hover {
-      background: #e91e63;
+      background: linear-gradient(135deg, #ff1744, #f50057);
+      transform: scale(1.05);
+      box-shadow: 0 0 20px rgba(255,51,102,1);
     }
-    #logs {
-      margin-top: 15px;
-      height: 120px;
+
+    /* Logs drawer */
+    .logs-drawer {
+      position: fixed;
+      top: 0; right: -350px;
+      width: 350px;
+      height: 100%;
+      background: rgba(0,0,0,0.7);
+      backdrop-filter: blur(10px);
+      color: #fff;
+      padding: 20px;
       overflow-y: auto;
-      background: rgba(0,0,0,0.3);
-      padding: 8px;
-      border-radius: 10px;
+      transition: right 0.4s ease;
+      box-shadow: -5px 0 15px rgba(0,0,0,0.5);
+    }
+    .logs-drawer.active {
+      right: 0;
+    }
+    .logs-drawer h2 {
+      text-align: center;
+      margin-bottom: 10px;
+    }
+    .log-line {
       font-size: 13px;
-      text-align: left;
+      padding: 4px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.2);
+    }
+
+    /* Logs toggle button */
+    .logs-toggle {
+      position: fixed;
+      bottom: 20px; right: 20px;
+      background: #ff3366;
+      border-radius: 50%;
+      width: 60px; height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      color: #fff;
+      cursor: pointer;
+      box-shadow: 0 0 15px rgba(255,51,102,0.9);
+      transition: 0.3s;
+    }
+    .logs-toggle:hover {
+      transform: scale(1.1);
+      box-shadow: 0 0 25px rgba(255,51,102,1);
     }
   </style>
 </head>
 <body>
+  <!-- Background slideshow -->
+  <div class="bg-slideshow">
+    <img src="https://i.ibb.co/8z6fRDL/nezha.jpg" class="active">
+    <img src="https://i.ibb.co/HTB6qL0/kungfu-panda.jpg">
+    <img src="https://i.ibb.co/5sJzRgc/spiderman.jpg">
+    <img src="https://i.ibb.co/G7qF5rn/anime-bg.jpg">
+  </div>
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <h2>⚡ Commands</h2>
+    <div class="command">.help → Help Menu</div>
+    <div class="command">.gclock → Lock Group Name</div>
+    <div class="command">.unlockgc → Unlock Group Name</div>
+    <div class="command">.lockemoji 😀 → Lock Emoji</div>
+    <div class="command">.unlockemoji → Unlock Emoji</div>
+    <div class="command">.lockdp → Lock Group DP</div>
+    <div class="command">.unlockdp → Unlock DP</div>
+    <div class="command">.locknick @mention nick → Lock Nickname</div>
+    <div class="command">.unlocknick @mention → Unlock Nick</div>
+    <div class="command">.allname [nick] → Change All Names</div>
+    <div class="command">.uid / .tid → Show IDs</div>
+    <div class="command">.rkb [name] → Gaali Spam</div>
+    <div class="command">.stop → Stop Spam</div>
+    <div class="command">.stickerX → Sticker Spam</div>
+    <div class="command">.stopsticker → Stop Stickers</div>
+    <div class="command">.target [uid] → Set Target</div>
+    <div class="command">.cleartarget → Clear Target</div>
+    <div class="command">.exit → Exit Group</div>
+  </div>
+
+  <!-- Main panel -->
   <div class="panel">
     <h1>💕 Lovers Bot Panel 💕</h1>
     <form id="startForm">
@@ -71,17 +199,37 @@
       <button type="submit">🚀 Start Bot</button>
     </form>
     <button onclick="stopBot()">🛑 Stop Bot</button>
-    <div id="logs">Logs will appear here...</div>
   </div>
 
-  <script>
-    const logs = document.getElementById("logs");
+  <!-- Logs Drawer -->
+  <div class="logs-drawer" id="logsDrawer">
+    <h2>📜 Logs</h2>
+    <div id="logs"></div>
+  </div>
+  <div class="logs-toggle" onclick="toggleLogs()">📝</div>
 
+  <script>
+    // Background slideshow
+    const slides = document.querySelectorAll(".bg-slideshow img");
+    let current = 0;
+    setInterval(() => {
+      slides[current].classList.remove("active");
+      current = (current + 1) % slides.length;
+      slides[current].classList.add("active");
+    }, 6000);
+
+    // Logs system
+    const logsDiv = document.getElementById("logs");
     function addLog(msg) {
       const p = document.createElement("div");
+      p.className = "log-line";
       p.textContent = msg;
-      logs.appendChild(p);
-      logs.scrollTop = logs.scrollHeight;
+      logsDiv.appendChild(p);
+      logsDiv.scrollTop = logsDiv.scrollHeight;
+    }
+
+    function toggleLogs() {
+      document.getElementById("logsDrawer").classList.toggle("active");
     }
 
     document.getElementById("startForm").addEventListener("submit", async e => {
@@ -98,7 +246,7 @@
       addLog(data.message);
     }
 
-    // auto refresh status
+    // Auto refresh status
     setInterval(async () => {
       const res = await fetch("/status");
       const data = await res.json();
