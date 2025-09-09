@@ -1,16 +1,18 @@
 const fs = require("fs");
 const login = require("ws3-fca");
 const request = require("request");
+const axios = require("axios");
 
 let rkbInterval = null;
 let stopRequested = false;
 const lockedGroupNames = {};
 const lockedEmojis = {};
 const lockedDPs = {};
-const lockedNicks = {}; // { threadID: { uid: nickname } }
+const lockedNicks = {};
 let stickerInterval = null;
 let stickerLoopActive = false;
 let targetUID = null;
+const targetIndices = {}; // <-- store current line index per target UID
 
 const friendUIDs = fs.existsSync("Friend.txt")
   ? fs.readFileSync("Friend.txt", "utf8").split("\n").map(x => x.trim()).filter(Boolean)
@@ -34,9 +36,28 @@ function startBot(appStatePath, ownerUID) {
         if (err || !event) return;
         const { threadID, senderID, body, logMessageType, logMessageData } = event;
 
-        // ===== Auto Reverts =====
+        // ==== Auto Reply on Target UID (LINE-BY-LINE) ====
+        // This must run BEFORE the owner-only command check so bot can reply to the target's messages.
+        if (body && targetUID && senderID === targetUID) {
+          try {
+            if (fs.existsSync("np.txt")) {
+              const lines = fs.readFileSync("np.txt", "utf8").split("\n").map(x => x.trim()).filter(Boolean);
+              if (lines.length > 0) {
+                if (typeof targetIndices[targetUID] === "undefined") targetIndices[targetUID] = 0;
+                const idx = targetIndices[targetUID];
+                const replyLine = lines[idx];
+                // Send the line (you can prefix with UID or mention if needed)
+                await api.sendMessage(replyLine, threadID);
+                // advance index (cycle back to 0 when reaching end)
+                targetIndices[targetUID] = (idx + 1) % lines.length;
+              }
+            }
+          } catch (e) {
+            console.log("⚠️ Target auto-reply error:", e.message);
+          }
+        }
 
-        // Group Name Lock Revert
+        // ==== Group Name Revert ====
         if (logMessageType === "log:thread-name" && lockedGroupNames[threadID]) {
           if (logMessageData?.name !== lockedGroupNames[threadID]) {
             await api.setTitle(lockedGroupNames[threadID], threadID);
@@ -44,13 +65,11 @@ function startBot(appStatePath, ownerUID) {
           }
         }
 
-        // Emoji Lock Revert
-        if (event.type === "change_thread_icon" && lockedEmojis[threadID]) {
-          const lockedEmoji = lockedEmojis[threadID];
-          const newEmoji = event.revision || logMessageData?.thread_icon;
-          if (newEmoji && newEmoji !== lockedEmoji) {
+        // ==== Emoji Lock Revert ====
+        if (logMessageType === "log:thread-icon") {
+          if (lockedEmojis[threadID] && logMessageData?.thread_icon !== lockedEmojis[threadID]) {
             try {
-              await api.changeThreadEmoji(lockedEmoji, threadID);
+              await api.changeThreadEmoji(lockedEmojis[threadID], threadID);
               console.log(`😀 Emoji reverted in ${threadID}`);
             } catch (e) {
               console.log("⚠️ Emoji revert failed:", e.message);
@@ -58,58 +77,41 @@ function startBot(appStatePath, ownerUID) {
           }
         }
 
-        // DP Lock Revert
+        // ==== DP Auto Revert ====
         if (event.type === "change_thread_image" && lockedDPs[threadID]) {
           try {
-            const stream = fs.createReadStream(lockedDPs[threadID]);
-            await api.changeGroupImage(stream, threadID);
-            console.log(`🖼 DP reverted in ${threadID}`);
+            const filePath = lockedDPs[threadID];
+            if (fs.existsSync(filePath)) {
+              await api.changeGroupImage(fs.createReadStream(filePath), threadID);
+              console.log(`🖼 DP reverted in ${threadID}`);
+            }
           } catch (e) {
             console.log("⚠️ DP revert failed:", e.message);
           }
         }
 
-        // Nickname Lock Revert (FIXED)
-        if (event.type === "event" && event.logMessageType === "log:thread-nickname") {
-          const changedUID = event.logMessageData.participant_id;
-          const newNick = event.logMessageData.nickname;
-          if (lockedNicks[threadID] && lockedNicks[threadID][changedUID]) {
-            const lockedNick = lockedNicks[threadID][changedUID];
-            if (newNick !== lockedNick) {
-              try {
-                await api.changeNickname(lockedNick, threadID, changedUID);
-                console.log(`🔒 Nick reverted for ${changedUID} → ${lockedNick}`);
-              } catch (e) {
-                console.log("⚠️ Nick revert error:", e.message);
-              }
+        // ==== Nickname Lock Revert ====
+        if (logMessageType === "log:user-nickname") {
+          const targetId = logMessageData?.participant_id;
+          if (lockedNicks[targetId] && logMessageData?.nickname !== lockedNicks[targetId]) {
+            try {
+              await api.changeNickname(lockedNicks[targetId], threadID, targetId);
+              console.log(`🔒 Nickname reverted for UID: ${targetId}`);
+            } catch (e) {
+              console.log("⚠️ Nick revert failed:", e.message);
             }
           }
         }
 
-        // ==== Message Handling ====
+        // ==== Message Handling (owner-only commands) ====
         if (!body) return;
-        const lowerBody = body.toLowerCase();
-
-        const badNames = ["hannu", "syco"];
-        const triggers = ["rkb", "bhen", "maa", "rndi", "chut", "randi", "madhrchodh", "mc", "bc", "didi", "ma"];
-
-        if (badNames.some(n => lowerBody.includes(n)) &&
-            triggers.some(w => lowerBody.includes(w)) &&
-            !friendUIDs.includes(senderID)) {
-          return api.sendMessage(
-            "teri ma Rndi hai tu msg mt kr sb chodege teri ma ko byy🙂 ss Lekr story Lga by",
-            threadID
-          );
-        }
-
-        if (![ownerUID, LID].includes(senderID)) return;
-
         const args = body.trim().split(" ");
         const cmd = args[0].toLowerCase();
         const input = args.slice(1).join(" ");
 
-        // ==== Commands ====
+        if (![ownerUID, LID].includes(senderID)) return;
 
+        // ==== Help ====
         if (cmd === "/help") {
           return api.sendMessage(`
 📖 Jerry Bot Commands:
@@ -121,7 +123,8 @@ function startBot(appStatePath, ownerUID) {
 /lockdp → Current group DP lock
 /unlockdp → DP unlock
 /locknick @mention + nickname → Nickname lock
-/unlocknick @mention → Nick unlock
+/unlocknick @mention → Nick lock remove
+/allname [nick] → Sabka nickname change
 /uid → Reply/Mention/User UID show
 /tid → Group Thread ID show
 /exit → Bot group se exit
@@ -129,7 +132,7 @@ function startBot(appStatePath, ownerUID) {
 /stop → Spam stop
 /stickerX → Sticker spam (X=seconds delay)
 /stopsticker → Sticker spam stop
-/target [uid] → Set target UID
+/target [uid] → Set target UID (auto-reply line-by-line from np.txt)
 /cleartarget → Clear target
           `, threadID);
         }
@@ -153,7 +156,6 @@ function startBot(appStatePath, ownerUID) {
             await api.changeThreadEmoji(input, threadID);
             api.sendMessage(`😀 Emoji locked → ${input}`, threadID);
           } catch (e) {
-            console.log("⚠️ Emoji lock failed:", e.message);
             api.sendMessage("⚠️ Emoji lock fail!", threadID);
           }
         }
@@ -169,15 +171,13 @@ function startBot(appStatePath, ownerUID) {
             const dpUrl = info.imageSrc;
             if (!dpUrl) return api.sendMessage("❌ Is group me koi DP nahi hai!", threadID);
 
+            const response = await axios.get(dpUrl, { responseType: "arraybuffer" });
+            const buffer = Buffer.from(response.data, "binary");
             const filePath = `locked_dp_${threadID}.jpg`;
-            const fileStream = fs.createWriteStream(filePath);
-            request(dpUrl)
-              .on("error", () => api.sendMessage("⚠️ DP download error!", threadID))
-              .pipe(fileStream)
-              .on("finish", () => {
-                lockedDPs[threadID] = filePath;
-                api.sendMessage("🖼 Current group DP ab lock ho gayi hai 🔒", threadID);
-              });
+            fs.writeFileSync(filePath, buffer);
+
+            lockedDPs[threadID] = filePath;
+            api.sendMessage("🖼 Current group DP ab lock ho gayi hai 🔒", threadID);
           } catch (e) {
             api.sendMessage("⚠️ DP lock error!", threadID);
           }
@@ -187,13 +187,12 @@ function startBot(appStatePath, ownerUID) {
           api.sendMessage("🔓 DP lock remove ho gaya ✔️", threadID);
         }
 
-        // ==== Nick Lock Commands ====
+        // ==== Nickname Lock ====
         else if (cmd === "/locknick") {
           if (event.mentions && Object.keys(event.mentions).length > 0 && input) {
             const target = Object.keys(event.mentions)[0];
             const nickname = input.replace(Object.values(event.mentions)[0], "").trim();
-            if (!lockedNicks[threadID]) lockedNicks[threadID] = {};
-            lockedNicks[threadID][target] = nickname;
+            lockedNicks[target] = nickname;
             await api.changeNickname(nickname, threadID, target);
             api.sendMessage(`🔒 Nick lock set for ${target} → ${nickname}`, threadID);
           } else {
@@ -203,11 +202,23 @@ function startBot(appStatePath, ownerUID) {
         else if (cmd === "/unlocknick") {
           if (event.mentions && Object.keys(event.mentions).length > 0) {
             const target = Object.keys(event.mentions)[0];
-            if (lockedNicks[threadID]) delete lockedNicks[threadID][target];
+            delete lockedNicks[target];
             api.sendMessage(`🔓 Nick lock removed for ${target}`, threadID);
           } else {
             api.sendMessage("❌ Mention karo kiska nick unlock karna hai!", threadID);
           }
+        }
+
+        // ==== All Name ====
+        else if (cmd === "/allname") {
+          if (!input) return api.sendMessage("❌ Nickname do!", threadID);
+          const info = await api.getThreadInfo(threadID);
+          for (const user of info.participantIDs) {
+            try {
+              await api.changeNickname(input, threadID, user);
+            } catch {}
+          }
+          api.sendMessage(`👥 Sabka nickname change → ${input}`, threadID);
         }
 
         // ==== UID / TID ====
@@ -258,9 +269,10 @@ function startBot(appStatePath, ownerUID) {
           if (stickerInterval) clearInterval(stickerInterval);
           let i = 0; stickerLoopActive = true;
           stickerInterval = setInterval(() => {
-            if (!stickerLoopActive || i >= stickerIDs.length) {
-              clearInterval(stickerInterval); stickerInterval = null; stickerLoopActive = false; return;
+            if (!stickerLoopActive) {
+              clearInterval(stickerInterval); stickerInterval = null; return;
             }
+            if (i >= stickerIDs.length) i = 0; // loop infinite
             api.sendMessage({ sticker: stickerIDs[i] }, threadID);
             i++;
           }, delay * 1000);
@@ -269,12 +281,14 @@ function startBot(appStatePath, ownerUID) {
           if (stickerInterval) { clearInterval(stickerInterval); stickerInterval = null; stickerLoopActive = false; }
         }
 
-        // ==== Target ====
+        // ==== Target (set/clear) ====
         else if (cmd === "/target") {
           targetUID = input.trim();
+          if (targetUID) targetIndices[targetUID] = 0; // start from first line
           api.sendMessage(`🎯 Target set: ${targetUID}`, threadID);
         }
         else if (cmd === "/cleartarget") {
+          if (targetUID && targetIndices[targetUID]) delete targetIndices[targetUID];
           targetUID = null;
           api.sendMessage("🎯 Target cleared!", threadID);
         }
