@@ -1,257 +1,162 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Lovers Bot Panel 💕</title>
-  <style>
-    /* Background slideshow */
-    body {
-      margin: 0;
-      font-family: "Poppins", sans-serif;
-      height: 100vh;
-      overflow: hidden;
-    }
-    .bg-slideshow {
-      position: fixed;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
-      z-index: -1;
-    }
-    .bg-slideshow img {
-      position: absolute;
-      width: 100%; height: 100%;
-      object-fit: cover;
-      opacity: 0;
-      transition: opacity 2s ease-in-out;
-    }
-    .bg-slideshow img.active {
-      opacity: 1;
-    }
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Jerry Bot Panel</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;500;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;}
+html,body{height:100%;margin:0;font-family:Poppins,system-ui,-apple-system,"Segoe UI",Roboto,Arial;background:#ffd6e0;overflow:auto;}
+body{display:flex;justify-content:center;align-items:center;padding:16px;position:relative;}
 
-    /* Sidebar */
-    .sidebar {
-      position: fixed;
-      left: 0; top: 0;
-      width: 220px;
-      height: 100%;
-      background: rgba(255,255,255,0.1);
-      backdrop-filter: blur(15px);
-      border-right: 2px solid rgba(255,255,255,0.2);
-      color: #fff;
-      padding: 20px;
-      overflow-y: auto;
-    }
-    .sidebar h2 {
-      font-size: 18px;
-      margin-bottom: 10px;
-      text-align: center;
-    }
-    .command {
-      margin: 8px 0;
-      padding: 8px;
-      border-radius: 10px;
-      background: rgba(255,255,255,0.08);
-      transition: 0.3s;
-      font-size: 14px;
-    }
-    .command:hover {
-      background: rgba(255,255,255,0.2);
-      transform: scale(1.05);
-    }
+/* Background image */
+.bg{
+  position:fixed;inset:0;z-index:-3;overflow:hidden;
+}
+.bg img{
+  position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;
+  transition:opacity 0.5s ease;
+  opacity:0;
+}
+.bg img.active{opacity:1;}
 
-    /* Main panel */
-    .panel {
-      margin-left: 240px;
-      margin-top: 50px;
-      max-width: 400px;
-      background: rgba(255,255,255,0.15);
-      backdrop-filter: blur(15px);
-      border-radius: 20px;
-      padding: 30px;
-      box-shadow: 0 8px 25px rgba(0,0,0,0.3);
-      color: #fff;
-      text-align: center;
-      animation: fadeInUp 1s ease;
-    }
-    @keyframes fadeInUp {
-      from {opacity:0; transform: translateY(40px);}
-      to {opacity:1; transform: translateY(0);}
-    }
+/* Corner overlay */
+body::after{
+  content:'';
+  position:fixed;top:0;left:0;width:100%;height:100%;
+  background:radial-gradient(circle at top left, rgba(0,0,0,0.2), transparent 70%);
+  pointer-events:none;
+  z-index:1;
+}
 
-    h1 {
-      margin-bottom: 20px;
-      font-size: 24px;
-    }
-    input, button {
-      width: 100%;
-      padding: 12px;
-      margin: 8px 0;
-      border: none;
-      border-radius: 12px;
-      font-size: 14px;
-    }
-    input {
-      background: rgba(255,255,255,0.9);
-      color: #333;
-    }
-    button {
-      cursor: pointer;
-      background: linear-gradient(135deg, #ff3366, #ff7eb3);
-      color: #fff;
-      font-weight: bold;
-      transition: 0.3s;
-      box-shadow: 0 0 10px rgba(255,51,102,0.7);
-    }
-    button:hover {
-      background: linear-gradient(135deg, #ff1744, #f50057);
-      transform: scale(1.05);
-      box-shadow: 0 0 20px rgba(255,51,102,1);
-    }
+/* Card panel */
+.card{
+  width:100%;
+  max-width:900px;
+  border-radius:20px;
+  background: rgba(255,255,255,0.06); /* minimal transparent glass */
+  padding:30px;
+  display:flex;
+  flex-direction:column;
+  gap:16px;
+  backdrop-filter: blur(8px) saturate(110%);
+  color:black;
+  position:relative;
+  overflow:hidden;
+  box-shadow:0 8px 20px rgba(0,0,0,0.15);
+}
 
-    /* Logs drawer */
-    .logs-drawer {
-      position: fixed;
-      top: 0; right: -350px;
-      width: 350px;
-      height: 100%;
-      background: rgba(0,0,0,0.7);
-      backdrop-filter: blur(10px);
-      color: #fff;
-      padding: 20px;
-      overflow-y: auto;
-      transition: right 0.4s ease;
-      box-shadow: -5px 0 15px rgba(0,0,0,0.5);
-    }
-    .logs-drawer.active {
-      right: 0;
-    }
-    .logs-drawer h2 {
-      text-align: center;
-      margin-bottom: 10px;
-    }
-    .log-line {
-      font-size: 13px;
-      padding: 4px 0;
-      border-bottom: 1px solid rgba(255,255,255,0.2);
-    }
+/* Brand & panel */
+.brand{display:flex;gap:12px;align-items:center}
+.logo{width:72px;height:72px;border-radius:16px;background:rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center;color:black;font-weight:800;font-size:28px;box-shadow:0 6px 15px rgba(0,0,0,0.1)}
+h1{margin:0;font-size:24px;color:black;}
+p.lead{margin:0;color:#333;font-size:15px;}
 
-    /* Logs toggle button */
-    .logs-toggle {
-      position: fixed;
-      bottom: 20px; right: 20px;
-      background: #ff3366;
-      border-radius: 50%;
-      width: 60px; height: 60px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 24px;
-      color: #fff;
-      cursor: pointer;
-      box-shadow: 0 0 15px rgba(255,51,102,0.9);
-      transition: 0.3s;
-    }
-    .logs-toggle:hover {
-      transform: scale(1.1);
-      box-shadow: 0 0 25px rgba(255,51,102,1);
-    }
-  </style>
+.form{display:flex;flex-direction:column;gap:12px;margin-top:6px}
+.filebtn,input[type="text"],.primary-btn,.muted-btn{
+  padding:14px;border-radius:14px;border:1px solid rgba(0,0,0,0.15);font-size:15px;
+  cursor:pointer;
+  color:black;
+  background:rgba(255,255,255,0.05);
+  text-align:center;
+}
+input[type="text"]{box-shadow:none;}
+.primary-btn, .muted-btn{border:1px solid rgba(0,0,0,0.15); background:rgba(255,255,255,0.05);}
+.primary-btn:hover, .muted-btn:hover, .filebtn:hover{background:rgba(255,255,255,0.1);}
+
+/* Status & logs */
+.status-panel, .logs-panel{
+  background: rgba(255,255,255,0.05);
+  padding:14px;border-radius:16px;border:1px solid rgba(0,0,0,0.05);
+  color:black;
+}
+.status{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.status .left{display:flex;gap:12px;align-items:center}
+.dot{width:12px;height:12px;border-radius:50%;background:#ff7b7b;}
+.dot.running{background:#2fe08a;}
+.meta{font-size:13px;color:black;}
+.owner{font-weight:700;color:black;}
+.logs-box{height:220px;overflow:auto;padding:8px;border-radius:12px;background:rgba(255,255,255,0.05);color:black;}
+@media (max-width:480px){.logs-box{height:160px}}
+</style>
 </head>
 <body>
-  <!-- Background slideshow -->
-  <div class="bg-slideshow">
-    <img src="https://i.ibb.co/8z6fRDL/nezha.jpg" class="active">
-    <img src="https://i.ibb.co/HTB6qL0/kungfu-panda.jpg">
-    <img src="https://i.ibb.co/5sJzRgc/spiderman.jpg">
-    <img src="https://i.ibb.co/G7qF5rn/anime-bg.jpg">
+
+<div class="bg" id="bg"><img id="bgImg"/></div>
+
+<div class="card" id="mainCard">
+  <div class="brand">
+    <div class="logo">J</div>
+    <div>
+      <h1>Jerry Bot Panel</h1>
+      <p class="lead">Mobile friendly • Glassy UI</p>
+    </div>
   </div>
 
-  <!-- Sidebar -->
-  <div class="sidebar">
-    <h2>⚡ Commands</h2>
-    <div class="command">.help → Help Menu</div>
-    <div class="command">.gclock → Lock Group Name</div>
-    <div class="command">.unlockgc → Unlock Group Name</div>
-    <div class="command">.lockemoji 😀 → Lock Emoji</div>
-    <div class="command">.unlockemoji → Unlock Emoji</div>
-    <div class="command">.lockdp → Lock Group DP</div>
-    <div class="command">.unlockdp → Unlock DP</div>
-    <div class="command">.locknick @mention nick → Lock Nickname</div>
-    <div class="command">.unlocknick @mention → Unlock Nick</div>
-    <div class="command">.allname [nick] → Change All Names</div>
-    <div class="command">.uid / .tid → Show IDs</div>
-    <div class="command">.rkb [name] → Gaali Spam</div>
-    <div class="command">.stop → Stop Spam</div>
-    <div class="command">.stickerX → Sticker Spam</div>
-    <div class="command">.stopsticker → Stop Stickers</div>
-    <div class="command">.target [uid] → Set Target</div>
-    <div class="command">.cleartarget → Clear Target</div>
-    <div class="command">.exit → Exit Group</div>
+  <form id="startForm" class="form" autocomplete="off">
+    <label class="filebtn" for="appstateInput">Choose appstate.json</label>
+    <input id="appstateInput" name="appstate" type="file" accept=".json" style="display:none" required />
+
+    <input id="ownerInput" class="text" name="owner" type="text" placeholder="Owner UID" required />
+
+    <label class="filebtn" for="bgUpload">Choose Background Image</label>
+    <input type="file" id="bgUpload" accept="image/*" style="display:none"/>
+
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button class="primary-btn" type="submit">🚀 Start Bot</button>
+      <button class="muted-btn" type="button" id="stopBtn">🛑 Stop Bot</button>
+    </div>
+  </form>
+
+  <div class="status-panel status">
+    <div class="left">
+      <div class="dot" id="statusDot"></div>
+      <div>
+        <div class="owner" id="ownerLabel">Owner: -</div>
+        <div class="meta" id="statusLine">Status: Stopped</div>
+      </div>
+    </div>
+    <div style="text-align:right">
+      <div class="small">Uptime</div>
+      <div id="uptime" style="font-weight:700">-</div>
+    </div>
   </div>
 
-  <!-- Main panel -->
-  <div class="panel">
-    <h1>💕 Lovers Bot Panel 💕</h1>
-    <form id="startForm">
-      <input type="file" name="appstate" required />
-      <input type="text" name="owner" placeholder="Enter Owner UID" required />
-      <button type="submit">🚀 Start Bot</button>
-    </form>
-    <button onclick="stopBot()">🛑 Stop Bot</button>
+  <div class="logs-panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <div style="font-weight:700">Logs</div>
+      <div class="small">Live</div>
+    </div>
+    <div class="logs-box" id="logsBox"></div>
   </div>
+</div>
 
-  <!-- Logs Drawer -->
-  <div class="logs-drawer" id="logsDrawer">
-    <h2>📜 Logs</h2>
-    <div id="logs"></div>
-  </div>
-  <div class="logs-toggle" onclick="toggleLogs()">📝</div>
+<script>
+const logsBox=document.getElementById("logsBox");
+let logs=[];
+function addLog(msg){ logs.unshift(`[${new Date().toLocaleTimeString()}] ${msg}`); if(logs.length>200) logs=logs.slice(0,200); renderLogs(); }
+function renderLogs(){ logsBox.innerHTML=logs.map(l=>`<div style="padding:6px;border-bottom:1px solid rgba(0,0,0,0.03);font-size:13px">${l}</div>`).join(''); }
 
-  <script>
-    // Background slideshow
-    const slides = document.querySelectorAll(".bg-slideshow img");
-    let current = 0;
-    setInterval(() => {
-      slides[current].classList.remove("active");
-      current = (current + 1) % slides.length;
-      slides[current].classList.add("active");
-    }, 6000);
-
-    // Logs system
-    const logsDiv = document.getElementById("logs");
-    function addLog(msg) {
-      const p = document.createElement("div");
-      p.className = "log-line";
-      p.textContent = msg;
-      logsDiv.appendChild(p);
-      logsDiv.scrollTop = logsDiv.scrollHeight;
+// Background upload
+const bgUpload=document.getElementById("bgUpload");
+const bgImg=document.getElementById("bgImg");
+const body=document.body;
+bgUpload.addEventListener("change",e=>{
+  const file=e.target.files[0];
+  if(file){
+    const reader=new FileReader();
+    reader.onload=()=>{
+      bgImg.src=reader.result; 
+      bgImg.classList.add("active"); 
+      body.style.background="none"; // remove default pink
     }
+    reader.readAsDataURL(file);
+  }
+});
 
-    function toggleLogs() {
-      document.getElementById("logsDrawer").classList.toggle("active");
-    }
-
-    document.getElementById("startForm").addEventListener("submit", async e => {
-      e.preventDefault();
-      const formData = new FormData(e.target);
-      const res = await fetch("/start", { method: "POST", body: formData });
-      const data = await res.json();
-      addLog(data.message);
-    });
-
-    async function stopBot() {
-      const res = await fetch("/stop", { method: "POST" });
-      const data = await res.json();
-      addLog(data.message);
-    }
-
-    // Auto refresh status
-    setInterval(async () => {
-      const res = await fetch("/status");
-      const data = await res.json();
-      addLog(`Status: ${data.running ? "✅ Running" : "❌ Stopped"} | Owner: ${data.owner || "-"}`);
-    }, 5000);
-  </script>
+document.getElementById('startForm').addEventListener('submit',e=>{ e.preventDefault(); addLog("Starting bot..."); });
+document.getElementById('stopBtn').addEventListener('click',()=>addLog("Stopping bot..."));
+</script>
 </body>
 </html>
