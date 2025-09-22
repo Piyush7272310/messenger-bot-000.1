@@ -2,9 +2,9 @@
   "name": "jerry-bot-panel",
   "version": "1.0.0",
   "description": "Facebook Bot with Web Panel",
-  "main": "server.js",
+  "main": "bot.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "node bot.js",
     "dev": "nodemon server.js"
   },
   "dependencies": {
