@@ -1,29 +1,53 @@
 {
-  "name": "jerry-bot-panel",
+
+  "name": "whatsapp-server",
+
   "version": "1.0.0",
-  "description": "Facebook Bot with Web Panel",
-  "main": "keep_alive.js",
+
+  "description": "A WhatsApp server to send messages via Baileys.",
+
+  "main": "index.js",
+
   "scripts": {
-    "start": "node keep_alive.js",
-    "dev": "nodemon keep_alive.js",
-    "install-deps": "npm install express@4.18.2 multer@1.4.4 axios@1.5.0 request@2.88.2 ws3-fca@latest"
+
+    "start": "node index.js"
+
   },
+
+  "keywords": [
+
+    "whatsapp",
+
+    "server",
+
+    "baileys",
+
+    "messaging"
+
+  ],
+
+  "author": "BLACK DEVIL ðŸ–¤",
+
+  "license": "MIT",
+
   "dependencies": {
-    "express": "4.18.2",
-    "multer": "1.4.4",
-    "axios": "1.5.0",
-    "request": "2.88.2",
-    "ws3-fca": "1.0.1",
-    "npmlog": "^6.0.2"
+
+    "@whiskeysockets/baileys": "^6.4.0",
+
+    "body-parser": "^1.20.2",
+
+    "express": "^4.18.2",
+
+    "fs": "^0.0.1-security",
+
+    "multer": "^1.4.5-lts.1",
+
+    "node-cache": "^5.1.2",
+
+    "pino": "^8.14.0"
+
   },
-  "devDependencies": {
-    "nodemon": "2.0.22"
-  },
-  "engines": {
-    "node": ">=14.0.0",
-    "npm": ">=6.0.0"
-  },
-  "keywords": ["facebook", "bot", "panel", "automation", "ws3-fca"],
-  "author": "Your Name",
-  "license": "MIT"
+
+  "devDependencies": {}
+
 }
